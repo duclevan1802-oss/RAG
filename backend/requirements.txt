@@ -1,0 +1,10 @@
+fastapi
+uvicorn 
+pymongo
+pydantic-settings
+httpx
+python-multipart
+PyMuPDF
+python-docx>=1.1.2,<2
+sentence-transformers
+chromadb
