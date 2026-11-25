@@ -74,30 +74,52 @@ async def ask_qwen(question: str) -> ChatResponse:
             done_reason=done_reason,
         )
 
-async def stream_qwen(prompt: str) -> AsyncIterator[str]:
+async def stream_qwen(
+    prompt: str,
+    history: list[dict[str, str]] | None = None,
+) -> AsyncIterator[dict]:
+    completed = False
+
+    messages: list[dict[str, str]] = [
+        {
+            "role": "system",
+            "content": (
+                "Bạn là trợ lý AI có khả năng "
+                "trả lời bằng kiến thức chung và "
+                "thông tin được truy xuất từ tài liệu. "
+                "Câu trả lời cuối phải bằng tiếng Việt, "
+                "chính xác, tự nhiên và đầy đủ. "
+                "Hãy sử dụng lịch sử hội thoại để hiểu "
+                "những từ như 'nó', 'phần trên' hoặc "
+                "'ý thứ nhất'."
+            ),
+        },
+    ]
+
+    if history:
+        messages.extend(history)
+
+    messages.append(
+        {
+            "role": "user",
+            "content": prompt,
+        }
+    )
+
     async with httpx.AsyncClient(
         timeout=180,
         trust_env=False,
     ) as client:
         async with client.stream(
             "POST",
-            f"{settings.ollama_base_url}/api/chat",
+            (
+                f"{settings.ollama_base_url}"
+                "/api/chat"
+            ),
             json={
                 "model": settings.ollama_model,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Trả lời bằng tiếng Việt, rõ ràng "
-                            "và ngắn gọn."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    },
-                ],
-                "think": False,
+                "messages": messages,
+                "think": True,
                 "stream": True,
                 "options": {
                     "num_predict": 5000,
@@ -114,32 +136,92 @@ async def stream_qwen(prompt: str) -> AsyncIterator[str]:
                     data = json.loads(line)
                 except json.JSONDecodeError as error:
                     raise OllamaResponseError(
-                        "Ollama trả về một dòng JSON không hợp lệ."
+                        "Ollama trả về một dòng "
+                        "JSON không hợp lệ."
                     ) from error
 
                 if not isinstance(data, dict):
                     raise OllamaResponseError(
-                        "Một dòng phản hồi Ollama không phải JSON object."
+                        "Phản hồi Ollama không phải "
+                        "JSON object."
                     )
 
                 if data.get("error"):
                     raise OllamaResponseError(
-                        "Ollama báo lỗi khi tạo câu trả lời."
+                        "Ollama báo lỗi khi tạo "
+                        "câu trả lời."
                     )
 
                 message = data.get("message")
 
                 if not isinstance(message, dict):
                     raise OllamaResponseError(
-                        "Phản hồi Ollama thiếu trường message hợp lệ."
+                        "Phản hồi Ollama thiếu "
+                        "trường message hợp lệ."
                     )
 
-                content = message.get("content")
+                thinking = message.get(
+                    "thinking",
+                    "",
+                )
+
+                content = message.get(
+                    "content",
+                    "",
+                )
+
+                if not isinstance(thinking, str):
+                    raise OllamaResponseError(
+                        "Trường thinking của Ollama "
+                        "không hợp lệ."
+                    )
 
                 if not isinstance(content, str):
                     raise OllamaResponseError(
-                        "Phản hồi Ollama thiếu trường content hợp lệ."
+                        "Trường content của Ollama "
+                        "không hợp lệ."
                     )
 
+                if thinking:
+                    yield {
+                        "type": "thinking",
+                        "content": thinking,
+                    }
+
                 if content:
-                    yield content
+                    yield {
+                        "type": "token",
+                        "content": content,
+                    }
+
+                if data.get("done") is True:
+                    done_reason = data.get(
+                        "done_reason"
+                    )
+
+                    if (
+                        done_reason is not None
+                        and not isinstance(
+                            done_reason,
+                            str,
+                        )
+                    ):
+                        raise OllamaResponseError(
+                            "Trường done_reason "
+                            "không hợp lệ."
+                        )
+
+                    completed = True
+
+                    yield {
+                        "type": "done",
+                        "done_reason": done_reason,
+                    }
+
+                    return
+
+    if not completed:
+        raise OllamaResponseError(
+            "Luồng Ollama kết thúc nhưng "
+            "không có sự kiện done."
+        )

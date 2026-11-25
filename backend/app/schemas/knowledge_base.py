@@ -15,13 +15,14 @@ class KnowledgeBaseResponse(BaseModel):
     id: str
     name: str
     description: str
-
+    document_count: int | None = Field(default=None, ge=0)
     @classmethod
     def from_mongo(cls, document: Mapping[str, Any]) -> Self:
         return cls(
             id=str(document["_id"]),
             name=document["name"],
             description=document.get("description", ""),
+            document_count=document.get("document_count"),
         )
 
 

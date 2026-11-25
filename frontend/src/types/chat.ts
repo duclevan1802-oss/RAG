@@ -1,7 +1,22 @@
 export interface Attachment { id: string; filename: string }
 export interface Source { id: string; filename: string; page?: number; excerpt: string }
-export interface Message { id: string; role: 'user' | 'assistant'; content: string; thinking?: string; streaming?: boolean; attachments?: Attachment[]; sources?: Source[] }
-export interface Conversation { id: string; title: string; messages: Message[] }
+export interface Message {
+  id: string | null;
+  role: 'user' | 'assistant';
+  replyToMessageId?: string;
+  content: string;
+  thinking?: string;
+  streaming?: boolean;
+  attachments?: Attachment[];
+  sources?: Source[];
+}
+
+export interface Conversation {
+  id: string | null;
+  title: string;
+  messages: Message[];
+  messagesState?: 'unloaded' | 'loading' | 'loaded' | 'error';
+}
 export interface RagSourceFromApi {
   chunk_id: string;
   document_id: string;

@@ -20,6 +20,10 @@ from app.core.document_operations import (
     document_operation,
 )
 from app.services.storage import read_from_atlas
+from app.repositories.document_chunks import (
+    replace_document_chunks,
+    delete_mongo_document_chunks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +87,17 @@ def _process_uploaded_document(
             embeddings=embeddings,
             knowledge_base_id=document.knowledge_base_id,
         )
-
+        mongo_count = replace_document_chunks(
+            document=chunked_document,
+            knowledge_base_id=(
+                document.knowledge_base_id
+            ),
+        )
+        if mongo_count != count:
+            raise IngestionError(
+                "Số chunk trong MongoDB và "
+                "ChromaDB không khớp."
+            )
         update_document_state(
             file_id=document.id,
             status="ready",
@@ -105,10 +119,23 @@ def _process_uploaded_document(
         )
 
         try:
-            delete_document_chunks(document.id)
+            delete_document_chunks(
+                document.id
+            )
         except Exception:
             logger.exception(
-                "Could not clean partial vectors: %s",
+                "Không dọn được vector của file %s",
+                document.id,
+            )
+
+        try:
+            delete_mongo_document_chunks(
+                document.id
+            )
+        except Exception:
+            logger.exception(
+                "Không dọn được MongoDB chunk "
+                "của file %s",
                 document.id,
             )
 

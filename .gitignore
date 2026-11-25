@@ -11,3 +11,4 @@ storage/uploads/*
 !storage/uploads/.gitkeep
 storage/chroma/*
 !storage/chroma/.gitkeep
+/.agents/skills/

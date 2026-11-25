@@ -21,7 +21,7 @@ from app.repositories.documents import get_atlas_file_info, list_atlas_files
 from app.repositories.knowledge_bases import find_knowledge_base_by_id
 from app.schemas.document import DocumentTextResponse
 from app.services.parsers.pdf import PDFParsingError, extract_pdf_text
-from app.schemas.document import DOCXTextResponse
+from app.schemas.document import (DOCXTextResponse,  StoredDocumentChunksResponse,) 
 
 from app.services.parsers.docx import (
     DOCXParsingError,
@@ -33,7 +33,7 @@ from app.workers.ingestion import (
 )
 from chromadb.errors import ChromaError
 from app.core.document_operations import DocumentBusyError
-
+from app.repositories.document_chunks import (list_document_chunks,)
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
@@ -244,3 +244,42 @@ def reindex_document_api(file_id: str):
         reindex_document,
         file_id,
     )
+
+@router.get(
+    "/{file_id}/chunks",
+    response_model=(
+        StoredDocumentChunksResponse
+    ),
+)
+def get_document_chunks_api(
+    file_id: str,
+):
+    validate_file_id(file_id)
+
+    try:
+        get_atlas_file_info(file_id)
+
+        chunks = list_document_chunks(
+            file_id
+        )
+
+        return StoredDocumentChunksResponse(
+            document_id=file_id,
+            total_chunks=len(chunks),
+            chunks=chunks,
+        )
+
+    except NoFile:
+        raise HTTPException(
+            status_code=404,
+            detail="Không tìm thấy file.",
+        )
+
+    except PyMongoError:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Không đọc được chunk "
+                "từ MongoDB."
+            ),
+        )

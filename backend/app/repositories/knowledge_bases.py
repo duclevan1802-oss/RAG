@@ -3,6 +3,7 @@ from bson import ObjectId
 from app.db.mongodb import create_mongo_client
 from pymongo import ReturnDocument
 from app.schemas.knowledge_base import KnowledgeBaseDeleteResponse, KnowledgeBaseResponse
+from app.repositories.documents import knowledge_base_file_filter
 
 def create_knowledge_base(name: str, description: str) -> KnowledgeBaseResponse:
     document = {
@@ -33,19 +34,37 @@ def get_or_create_knowledge_base(name: str):
 
         return str(document["_id"])
 
-def list_knowledge_bases(skip: int = 0, limit: int = 20) -> list[KnowledgeBaseResponse]:
+def list_knowledge_bases(
+    skip: int = 0,
+    limit: int = 20,
+) -> list[KnowledgeBaseResponse]:
     with create_mongo_client() as client:
         database = client[settings.mongodb_database]
 
-        documents = (
+        bases = list(
             database["knowledge_bases"]
             .find({})
             .sort("_id", -1)
             .skip(skip)
             .limit(limit)
         )
+        if not bases:
+            return []
 
-        return [KnowledgeBaseResponse.from_mongo(document) for document in documents]
+        base_ids = [base["_id"] for base in bases]
+        file_counts = database["fs.files"].aggregate([
+            {"$match": {"metadata.knowledge_base_id": {"$in": base_ids}}},
+            {"$group": {"_id": "$metadata.knowledge_base_id", "count": {"$sum": 1}}},
+        ])
+        counts = {row["_id"]: row["count"] for row in file_counts}
+
+        return [
+            KnowledgeBaseResponse.from_mongo({
+                **base,
+                "document_count": counts.get(base["_id"], 0),
+            })
+            for base in bases
+        ]
 
 
 def find_knowledge_base_by_name(name: str) -> KnowledgeBaseResponse:
@@ -108,7 +127,7 @@ def delete_knowledge_base_by_id(knowledge_base_id: str) -> KnowledgeBaseDeleteRe
             raise LookupError("Không tìm thấy bộ tài liệu.")
 
         file = database["fs.files"].find_one(
-            {"metadata.knowledge_base_id": str(document["_id"])}
+            knowledge_base_file_filter(document["_id"])
         )
 
         if file is not None:

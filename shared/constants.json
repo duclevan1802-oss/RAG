@@ -7,5 +7,7 @@
   "conversation_default_title": "Cuộc trò chuyện mới",
   "conversation_title_max_length": 200,
   "message_max_length": 100000,
-  "conversation_auto_title_length": 44
+  "conversation_auto_title_length": 44,
+  "retrieval_max_distance": 0.65,
+  "retrieval_min_text_length": 80
 }

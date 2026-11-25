@@ -5,7 +5,7 @@ from app.db.chroma import get_document_collection
 from app.db.mongodb import create_mongo_client
 from app.schemas.retrieval import RetrievedChunk
 from app.services.embeddings import create_embeddings
-
+from app.core.constants import (RETRIEVAL_MAX_DISTANCE, RETRIEVAL_MIN_TEXT_LENGTH,)
 
 def search_document_chunks(
     question: str,
@@ -72,7 +72,9 @@ def search_document_chunks(
         }
 
         if knowledge_base_id is not None:
-            file_filter["metadata.knowledge_base_id"] = knowledge_base_id
+            file_filter["metadata.knowledge_base_id"] = ObjectId(
+                knowledge_base_id
+            )
 
         ready_files = database["fs.files"].find(
             file_filter,
@@ -95,6 +97,17 @@ def search_document_chunks(
         if not metadata or not text:
             continue
 
+        if len(text.strip()) < RETRIEVAL_MIN_TEXT_LENGTH:
+            continue        
+        
+        if not metadata or not text:
+            continue
+        if (
+            distance is None
+            or distance >
+                RETRIEVAL_MAX_DISTANCE
+        ):
+            continue        
         document_id = metadata.get("document_id")
 
         if document_id not in ready_filenames:

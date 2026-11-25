@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 from typing import Any, Self
-
+from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -89,3 +89,22 @@ class DocumentChunksResponse(BaseModel):
     overlap: int
     total_chunks: int
     chunks: list[DocumentChunk]
+
+class StoredDocumentChunk(BaseModel):
+    id: str
+    document_id: str
+    knowledge_base_id: str
+    chunk_number: int
+    text: str
+    page_number: int | None = None
+    block_number: int | None = None
+    chunk_size: int
+    overlap: int
+    created_at: datetime
+
+class StoredDocumentChunksResponse(
+    BaseModel
+):
+    document_id: str
+    total_chunks: int
+    chunks: list[StoredDocumentChunk]

@@ -5,13 +5,25 @@ import MessageList from '../components/chat/MessageList';
 import ChatComposer from '../components/chat/ChatComposer';
 import Icon from '../components/Icon';
 import { suggestions } from '../mocks/data';
-interface Props { conversation: Conversation; knowledgeBases: KnowledgeBase[]; 
+interface Props {
+  conversation: Conversation;
+  knowledgeBases: KnowledgeBase[];
   onSend: (
     content: string,
     attachments: Attachment[],
     knowledgeBaseId: string,
-  ) => void }
-export default function ChatPage({ conversation, knowledgeBases, onSend }: Props) {
+  ) => void;
+  canStop: boolean;
+  onStop: () => void;
+}
+
+export default function ChatPage({
+  conversation,
+  knowledgeBases,
+  onSend,
+  canStop,
+  onStop,
+}: Props) {
   const [draft, setDraft] = useState('');
   const [selectedBaseId, setSelectedBaseId] = useState('');
   return <div className="chat-page"><header className="topbar"><div><span className="eyebrow">KHÔNG GIAN CÁ NHÂN</span><h2>Trò chuyện</h2></div><span className="model-chip"><span className="dot"/>Qwen3 4B <span className="muted">/ Local</span></span></header>
@@ -20,6 +32,8 @@ export default function ChatPage({ conversation, knowledgeBases, onSend }: Props
 ><option value="">Tất cả bộ tài liệu</option>{knowledgeBases.map(k => <option key={k.id} value={k.id}>{k.name}</option>)}</select></label>
 <ChatComposer
   value={draft}
+  canStop={canStop}
+  onStop={onStop}
   onChange={setDraft}
   onSend={(content, attachments) => {
     const selectedBase = knowledgeBases.find(

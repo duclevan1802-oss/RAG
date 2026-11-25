@@ -5,16 +5,31 @@ import KnowledgeBasePage from './pages/KnowledgeBasePage';
 import KnowledgeBaseDetailPage from './pages/KnowledgeBaseDetailPage';
 import { documents as initialDocuments } from './mocks/data';
 import type { KnowledgeBase } from './types/document';
-import type { Attachment, Conversation, RagSourceFromApi } from './types/chat';
+import type { Attachment, Conversation, MessageFromApi, RagSourceFromApi } from './types/chat';
 import {checkHealth, getDocuments, getKnowledgeBases, uploadDocument, deleteDocument, createKnowledgeBase, streamRagQuestion, getConversations,getConversationMessages, createConversation, saveConversationMessage, deleteConversation,} from './services/api';
 import constants from '../../shared/constants.json';
 
-function freshConversation(): Conversation { return { id: crypto.randomUUID(), title: constants.conversation_default_title, messages: [] }; }
+function freshConversation(): Conversation {
+  return {
+    id: null,
+    title:
+      constants.conversation_default_title,
+    messages: [],
+  };
+}
 export default function App() {
   const [page, setPage] = useState<'chat' | 'documents'>('chat');
   const [conversations, setConversations] = useState<Conversation[]>(() => [freshConversation()]);
   const sendingRef = useRef(false);
-  const [activeId, setActiveId] = useState('');
+  const loadingMessagesRef = useRef(new Set<string>());
+  const streamControllerRef = useRef<AbortController | null>(null);
+  const [streamConversationId, setStreamConversationId] =
+    useState<string | null>(null);
+
+  function stopGenerating() {
+    streamControllerRef.current?.abort();
+  }
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [bases, setBases] = useState<KnowledgeBase[]>([]);
   const [basesError, setBasesError] = useState('');
   const [historyError, setHistoryError] = useState('');
@@ -22,10 +37,29 @@ export default function App() {
   const [documents, setDocuments] = useState(initialDocuments);
   const [selectedBase, setSelectedBase] = useState<string | null>(null);
   const [health, setHealth] = useState<'checking' | 'online' | 'offline'>('checking');
-  const active = conversations.find(c => c.id === activeId) ?? conversations[0];
-  const visibleConversations = conversations.filter(conversation => 
-    {const isMongoId = /^[0-9a-f]{24}$/i.test(conversation.id);
-    return isMongoId || conversation.messages.length > 0;});
+  const active =
+    conversations.find(
+      conversation =>
+        conversation.id === activeId,
+    ) ?? conversations[0];
+  const visibleConversations =
+    conversations.filter(conversation => {
+      const isSaved =
+        conversation.id !== null;
+
+      const isActiveDraft =
+        conversation.id === active.id;
+
+      const hasMessages =
+        conversation.messages.length > 0;
+
+      return (
+        isSaved ||
+        isActiveDraft ||
+        hasMessages
+      );
+    });
+
   const selected = bases.find(b => b.id === selectedBase);
 useEffect(() => {
   const controller = new AbortController();
@@ -72,37 +106,14 @@ useEffect(() => {
 
   async function loadHistory() {
     try {
-      // Lấy danh sách hội thoại.
       const savedConversations = await getConversations();
 
-      // Lấy tin nhắn của từng hội thoại.
-      const history: Conversation[] = await Promise.all(
-        savedConversations.map(async conversation => {
-          const savedMessages = await getConversationMessages(
-            conversation.id,
-          );
-
-          return {
-            id: conversation.id,
-            title: conversation.title,
-
-            messages: savedMessages.map(message => ({
-              id: message.id,
-              role: message.role,
-              content: message.content,
-
-              thinking: message.thinking ?? undefined,
-
-              sources: message.sources.map(source => ({
-                id: source.chunk_id,
-                filename: source.filename,
-                page: source.page_number ?? undefined,
-                excerpt: source.text,
-              })),
-            })),
-          };
-        }),
-      );
+      const history: Conversation[] = savedConversations.map(conversation => ({
+        id: conversation.id,
+        title: conversation.title,
+        messages: [],
+        messagesState: 'unloaded',
+      }));
 
       if (cancelled) return;
 
@@ -195,9 +206,9 @@ async function handleCreateKnowledgeBase(name: string) {
   }
 }
 async function handleDeleteConversation(
-  conversationId: string,
-) 
-{
+  conversationId: string | null,
+) {
+  
   if (sendingRef.current) {
     setHistoryError(
       'Hãy đợi câu trả lời hoàn tất trước khi xóa hội thoại.',
@@ -214,16 +225,24 @@ async function handleDeleteConversation(
   setHistoryError('');
 
   try {
-    const isMongoId = /^[0-9a-f]{24}$/i.test(conversationId);
-
-    // Hội thoại tạm chỉ tồn tại trên giao diện, không cần gọi API.
-    if (isMongoId) {
-      await deleteConversation(conversationId);
+    if (conversationId !== null) {
+      await deleteConversation(
+        conversationId
+      );
     }
+
+    const nextConversation =
+      conversations.find(
+        conversation =>
+          conversation.id !==
+          conversationId,
+      );
 
     setConversations(old => {
       const remaining = old.filter(
-        conversation => conversation.id !== conversationId,
+        conversation =>
+          conversation.id !==
+          conversationId,
       );
 
       return remaining.length > 0
@@ -231,10 +250,17 @@ async function handleDeleteConversation(
         : [freshConversation()];
     });
 
-    // Nếu đang mở hội thoại vừa xóa, chuyển về hội thoại đầu tiên còn lại.
-    if (active.id === conversationId) {
-      setActiveId('');
+    if (
+      active.id === conversationId
+    ) {
+      setActiveId(
+        nextConversation?.id ?? null
+      );
     }
+    if (active.id === conversationId) {
+      setActiveId(nextConversation?.id ?? null);
+      void loadConversationMessages(nextConversation?.id ?? null);
+    }    
   } catch (error) {
     setHistoryError(
       error instanceof Error
@@ -243,34 +269,83 @@ async function handleDeleteConversation(
     );
   }
 }
-async function newChat() {
+function newChat() {
+  if (sendingRef.current) {
+    setHistoryError(
+      'Hãy đợi câu trả lời hiện tại hoàn tất.',
+    );
+    return;
+  }
+
   setHistoryError('');
 
+  const draft =
+    freshConversation();
+
+  setConversations(old => [
+    draft,
+
+    ...old.filter(
+      conversation =>
+        conversation.id !== null,
+    ),
+  ]);
+
+  setActiveId(null);
+  setPage('chat');
+}
+async function loadConversationMessages(id: string | null) {
+  if (id === null || loadingMessagesRef.current.has(id)) return;
+
+  const conversation = conversations.find(item => item.id === id);
+  if (
+    conversation?.messagesState !== 'unloaded' &&
+    conversation?.messagesState !== 'error'
+  ) return;
+
+  loadingMessagesRef.current.add(id);
+  setConversations(old => old.map(item =>
+    item.id === id ? { ...item, messagesState: 'loading' } : item,
+  ));
+
   try {
-    // Tạo hội thoại trên backend và Atlas.
-    const saved = await createConversation();
+    const data = await getConversationMessages(id);
+    const messages = data.map(message => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      thinking: message.thinking ?? undefined,
+      sources: message.sources.map(source => ({
+        id: source.chunk_id,
+        filename: source.filename,
+        page: source.page_number ?? undefined,
+        excerpt: source.text,
+      })),
+    }));
 
-    // Chuyển dữ liệu sang cấu trúc frontend đang dùng.
-    const conversation: Conversation = {
-      id: saved.id,
-      title: saved.title,
-      messages: [],
-    };
-
-    setConversations(old => [conversation, ...old]);
-
-    setActiveId(conversation.id);
-
-    setPage('chat');
+    setConversations(old => old.map(item =>
+      item.id === id ? { ...item, messages, messagesState: 'loaded' } : item,
+    ));
   } catch {
-    setHistoryError('Không tạo được cuộc trò chuyện mới.');
+    setConversations(old => old.map(item =>
+      item.id === id ? { ...item, messagesState: 'error' } : item,
+    ));
+  } finally {
+    loadingMessagesRef.current.delete(id);
   }
+}
+
+function handleSelectConversation(id: string | null) {
+  setActiveId(id);
+  setPage('chat');
+  void loadConversationMessages(id);
 }
 async function send(
   content: string,
   attachments: Attachment[],
   knowledgeBaseId: string,
-) {
+) 
+{
   if (!content.trim()) return;
 
   if (sendingRef.current) {
@@ -283,74 +358,67 @@ async function send(
   sendingRef.current = true;
   setHistoryError('');
 
-  const originalId = active.id;
-  let conversationId = originalId;
+let conversationId = active.id;
 
-  try {
-    // Hội thoại tạm trên frontend dùng UUID.
-    // ID hội thoại MongoDB có 24 ký tự hex.
-    const isMongoId = /^[0-9a-f]{24}$/i.test(conversationId);
+try {
+  let savedUserMessage:
+    MessageFromApi;
 
-    if (!isMongoId) {
-      const created = await createConversation();
+  if (conversationId === null) {
+    const started =
+      await createConversation(content);
 
-      conversationId = created.id;
+    const createdConversation =
+      started.conversation;
 
-      setConversations(old =>
-        old.map(conversation =>
-          conversation.id === originalId
-            ? {
-                ...conversation,
-                id: created.id,
-                title: created.title,
-              }
-            : conversation,
-        ),
-      );
+    conversationId =
+      createdConversation.id;
 
-      // Chỉ chuyển lựa chọn nếu người dùng vẫn đang ở hội thoại cũ.
-      setActiveId(current => {
-        if (current === originalId || current === '') {
-          return created.id;
-        }
+    savedUserMessage =
+      started.message;
 
-        return current;
-      });
-    }
-const savedUserMessage = await saveConversationMessage(
-  conversationId,
-  {
-    role: 'user',
-    content,
-  },
-);
-
-if (
-  active.title === constants.conversation_default_title &&
-  !active.messages.some(message => message.role === 'user')
-) 
-{
-  const title = content.trim().slice(
-    0,
-    constants.conversation_auto_title_length,
-  );
-
-  if (title) {
+    // Bản nháp là conversation duy nhất
+    // có id bằng null.
     setConversations(old =>
       old.map(conversation =>
-        conversation.id === conversationId
-          ? { ...conversation, title }
+        conversation.id === null
+          ? {
+              ...conversation,
+              id:
+                createdConversation.id,
+              title:
+                createdConversation.title,
+            }
           : conversation,
       ),
     );
+
+    setActiveId(
+      createdConversation.id
+    );
+  } else {
+    savedUserMessage =
+      await saveConversationMessage(
+        conversationId,
+        {
+          role: 'user',
+          content,
+        },
+      );
   }
-}
 
-    const assistantId = crypto.randomUUID();
+  if (conversationId === null) {
+    throw new Error(
+      'Backend chưa trả về ID hội thoại.',
+    );
+  }
 
+  const savedConversationId:
+    string = conversationId;
+    const replyToMessageId = savedUserMessage.id;
     setConversations(old =>
       old.map(conversation =>
-        conversation.id !== conversationId
+        conversation.id !== savedConversationId
           ? conversation
           : {
               ...conversation,
@@ -363,8 +431,9 @@ if (
                   attachments,
                 },
                 {
-                  id: assistantId,
+                  id: null,
                   role: 'assistant',
+                  replyToMessageId,
                   content: '',
                   thinking: '',
                   streaming: true,
@@ -380,11 +449,15 @@ if (
     let sources: RagSourceFromApi[] = [];
 
     let answerStatus: 'completed' | 'failed' = 'completed';
-
+    const controller = new AbortController();
+    streamControllerRef.current = controller;
+    setStreamConversationId(savedConversationId);
     try {
       await streamRagQuestion(
         content,
         knowledgeBaseId,
+        savedConversationId,
+        savedUserMessage.id,
         event => {
           if (event.type === 'thinking') {
             thinking += event.content;
@@ -397,6 +470,14 @@ if (
           if (event.type === 'sources') {
             sources = event.sources;
           }
+          if (event.type === 'done') {
+            sources = sources.filter(
+              (_, index) =>
+                answer.includes(
+                  `[Nguồn ${index + 1}]`
+                ),
+            );
+          }          
 
           if (
             event.type === 'done' &&
@@ -407,14 +488,19 @@ if (
 
           setConversations(old =>
             old.map(conversation => {
-              if (conversation.id !== conversationId) {
+              if (conversation.id !== savedConversationId) {
                 return conversation;
               }
 
               return {
                 ...conversation,
                 messages: conversation.messages.map(message => {
-                  if (message.id !== assistantId) {
+                  const isPendingAssistant =
+                    message.id === null &&
+                    message.role === 'assistant' &&
+                    message.replyToMessageId === replyToMessageId
+
+                  if (!isPendingAssistant) {
                     return message;
                   }
 
@@ -435,27 +521,37 @@ if (
             }),
           );
         },
+        controller.signal,
       );
     } catch (error) {
-      answerStatus = 'failed';
+      const stopped = controller.signal.aborted;
 
-      const errorMessage =
-        error instanceof Error
+      if (stopped) {
+        answer = answer.trim()
+          ? `${answer}\n\n[Đã dừng tạo]`
+          : 'Đã dừng tạo.';
+      } else {
+        answerStatus = 'failed';
+
+        const errorMessage = error instanceof Error
           ? error.message
           : 'Không nhận được câu trả lời.';
 
-      answer += `${answer ? '\n\n' : ''}Có lỗi: ${errorMessage}`;
+        answer += `${answer ? '\n\n' : ''}Có lỗi: ${errorMessage}`;
+    }
 
       setConversations(old =>
         old.map(conversation => {
-          if (conversation.id !== conversationId) {
+          if (conversation.id !==savedConversationId) {
             return conversation;
           }
-
+          
           return {
             ...conversation,
             messages: conversation.messages.map(message =>
-              message.id === assistantId
+              message.id === null &&
+              message.role === 'assistant' &&
+              message.replyToMessageId === replyToMessageId
                 ? {
                     ...message,
                     content: answer,
@@ -467,12 +563,16 @@ if (
           };
         }),
       );
-    }
+      if (stopped) return;
+    } finally {
+      streamControllerRef.current = null;
+      setStreamConversationId(null);
+    }      
 
   
     try {
       const savedAssistant = await saveConversationMessage(
-        conversationId,
+          savedConversationId,
         {
           role: 'assistant',
           content: answer,
@@ -485,14 +585,16 @@ if (
      
       setConversations(old =>
         old.map(conversation => {
-          if (conversation.id !== conversationId) {
+          if (conversation.id !== savedConversationId){
             return conversation;
           }
 
           return {
             ...conversation,
             messages: conversation.messages.map(message =>
-              message.id === assistantId
+              message.id === null &&
+              message.role === 'assistant' &&
+              message.replyToMessageId === replyToMessageId
                 ? {
                     ...message,
                     id: savedAssistant.id,
@@ -518,5 +620,25 @@ if (
     sendingRef.current = false;
   }
 }
-  return <div className="app"><Sidebar page={page} onNavigate={p => { setPage(p); setSelectedBase(null); }} conversations={visibleConversations} activeId={active.id} onSelect={id => { setActiveId(id); setPage('chat'); }} onNew={newChat} onDelete={handleDeleteConversation}/><main className="main"><div className="demo-bar">{basesError && <span role="alert">{basesError}</span>}{historyError && <span role="alert">{historyError}</span>}{uploading && <span>Đang tải và xử lý tài liệu...</span>}<span>GIAO DIỆN MẪU</span><span className="backend-status">API {health === 'checking' ? 'đang kiểm tra…' : health === 'online' ? 'đã kết nối · RAG chưa tích hợp' : 'chưa kết nối'}</span></div>{page === 'chat' ? <ChatPage key={active.id} conversation={active} knowledgeBases={bases} onSend={send}/> : selected ? <KnowledgeBaseDetailPage knowledgeBase={selected} documents={documents.filter(d => d.knowledgeBaseId === selected.id)} onBack={() => setSelectedBase(null)} onAdd={files => handleUpload(selected.id, files)} onDelete={handleDeleteDocument}/> : <KnowledgeBasePage knowledgeBases={bases} documents={documents} onOpen={setSelectedBase} onCreate={handleCreateKnowledgeBase}/>}</main></div>;
-}
+const chatContent =
+  active.messagesState === 'error' ? (
+    <button
+      type="button"
+      className="secondary"
+      onClick={() => void loadConversationMessages(active.id)}
+    >
+      Không tải được tin nhắn. Thử lại
+    </button>
+  ) : active.messagesState === 'loading' || active.messagesState === 'unloaded' ? (
+    <p role="status">Đang tải tin nhắn…</p>
+  ) : (
+    <ChatPage
+      key={active.id ?? 'unsaved-draft'}
+      conversation={active}
+      knowledgeBases={bases}
+      onSend={send}
+      canStop={active.id !== null && active.id === streamConversationId}
+      onStop={stopGenerating}
+    />
+  );
+  return <div className="app"><Sidebar page={page} onNavigate={p => { setPage(p); setSelectedBase(null); }} conversations={visibleConversations} activeId={active.id} onSelect={handleSelectConversation} onNew={newChat} onDelete={handleDeleteConversation}/><main className="main"><div className="demo-bar">{basesError && <span role="alert">{basesError}</span>}{historyError && <span role="alert">{historyError}</span>}{uploading && <span>Đang tải và xử lý tài liệu...</span>}<span>GIAO DIỆN MẪU</span><span className="backend-status">API {health === 'checking' ? 'đang kiểm tra…' : health === 'online' ? 'đã kết nối · RAG chưa tích hợp' : 'chưa kết nối'}</span></div>{page === 'chat' ? chatContent : selected ?<KnowledgeBaseDetailPage knowledgeBase={selected} documents={documents.filter(d => d.knowledgeBaseId === selected.id)} onBack={() => setSelectedBase(null)} onAdd={files => handleUpload(selected.id, files)} onDelete={handleDeleteDocument}/> : <KnowledgeBasePage knowledgeBases={bases} documents={documents} onOpen={setSelectedBase} onCreate={handleCreateKnowledgeBase}/>}</main></div>;}

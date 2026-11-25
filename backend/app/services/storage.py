@@ -12,21 +12,31 @@ from app.repositories.documents import (
     get_atlas_file_info,
     mark_file_deleting,
 )
-from app.services.vector_store import delete_document_chunks
 from app.core.document_operations import document_operation
+from app.services.vector_store import (
+    delete_document_chunks
+    as delete_vector_chunks,
+)
+from app.repositories.document_chunks import (
+    delete_mongo_document_chunks,
+)
 
 def upload_to_atlas(filename: str, content: bytes, knowledge_base_id: str) -> DocumentResponse:
     with create_mongo_client() as client:
         database = client[settings.mongodb_database]
+        knowledge_base_object_id = ObjectId(knowledge_base_id)
 
-        knowledge_base = find_knowledge_base_record(database, ObjectId(knowledge_base_id))
+        knowledge_base = find_knowledge_base_record(
+            database,
+            knowledge_base_object_id,
+        )
 
         if knowledge_base is None:
             raise LookupError("Không tìm thấy bộ tài liệu.")
 
         bucket = GridFSBucket(database)
         metadata = {
-            "knowledge_base_id": knowledge_base_id,
+            "knowledge_base_id": knowledge_base_object_id,
             "status": "uploaded",
         }
 
@@ -89,7 +99,8 @@ def _delete_atlas_file(file_id: str) -> DocumentDeleteResponse:
         document = find_file_record(database, object_id)
         mark_file_deleting(database, object_id)
 
-        delete_document_chunks(file_id)
+        delete_vector_chunks(file_id)
+        delete_mongo_document_chunks(file_id)
         try:
             bucket.delete(object_id)
 

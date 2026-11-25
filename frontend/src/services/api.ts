@@ -190,12 +190,21 @@ export async function sendRagQuestion(
 export async function streamRagQuestion(
   question: string,
   knowledgeBaseId: string,
+  conversationId: string,
+  currentMessageId: string,
   onEvent: (event: RagStreamEvent) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/api/chat/rag/stream`, {
     method: 'POST',
+    signal,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, knowledge_base_id: knowledgeBaseId || null }),
+    body: JSON.stringify({
+      question,
+      knowledge_base_id: knowledgeBaseId || null,
+      conversation_id: conversationId,
+      current_message_id: currentMessageId,
+    }),
   });
   if (!response.ok) {
     let message = 'Không gửi được câu hỏi.';
@@ -260,9 +269,9 @@ export async function getConversationMessages(
   return response.json();
 }
 
-export async function createConversation(content: string): Promise<{
-  title: string;
-  id: string;
+export async function createConversation(
+  content: string,
+): Promise<{
   conversation: ConversationFromApi;
   message: MessageFromApi;
 }> {

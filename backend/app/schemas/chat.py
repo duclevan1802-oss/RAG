@@ -14,11 +14,29 @@ class ChatResponse(BaseModel):
     done_reason: str | None = None
 
 class RagChatRequest(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    model_config = ConfigDict(
+        str_strip_whitespace=True, 
+        extra="forbid"
+    )
 
-    question: str = Field(min_length=1, max_length=16000)
-    knowledge_base_id: str | None = Field(default=None, min_length=1, max_length=100)
+    question: str = Field(
+        min_length=1, 
+        max_length=16000
+    )
+    knowledge_base_id: str | None = Field(
+        default=None, 
+        min_length=1, 
+        max_length=100)
 
+    conversation_id: str = Field(
+        min_length=24,
+        max_length=24,
+    )
+
+    current_message_id: str = Field(
+        min_length=24,
+        max_length=24,
+    )
 
 class RagChatResponse(ChatResponse):
     sources: list[RetrievedChunk] = Field(default_factory=list)
