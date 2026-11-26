@@ -4,7 +4,9 @@ const labels: Record<Status, string> = {
   queued: 'Chờ xử lý',
   processing: 'Đang xử lý',
   ready: 'Sẵn sàng',
-  failed: 'Chưa xử lý',
+  failed: 'Xử lý thất bại',
   deleting: 'Đang xóa',
 };
-export default function DocumentStatus({ status }: { status: Status }) { return <span className={`status ${status}`}><i/>{labels[status]}</span>; }
+export default function DocumentStatus({ status }: { status: Status }) {
+  return <span className={`status ${status}`}><i aria-hidden="true" />{labels[status]}</span>;
+}

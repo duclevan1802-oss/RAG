@@ -1,7 +1,4 @@
-import {
-  useEffect,
-  useRef,
-} from 'react';
+import type { Ref } from 'react';
 
 import type {
   Message,
@@ -12,21 +9,16 @@ import MessageBubble
 
 export default function MessageList({
   messages,
+  showStreaming,
+  ref,
 }: {
   messages: Message[];
+  showStreaming: boolean;
+  ref?: Ref<HTMLDivElement>;
 }) {
-  const end =
-    useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    end.current?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'end',
-    });
-  }, [messages]);
-
   return (
     <div
+      ref={ref}
       className="message-list"
       role="log"
       aria-label="Nội dung hội thoại"
@@ -39,10 +31,9 @@ export default function MessageList({
               : message.id
           }
           message={message}
+          showStreaming={showStreaming}
         />
       ))}
-
-      <div ref={end} />
     </div>
   );
 }

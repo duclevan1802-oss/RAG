@@ -3,11 +3,32 @@ import Sidebar from './components/layout/Sidebar';
 import ChatPage from './pages/ChatPage';
 import KnowledgeBasePage from './pages/KnowledgeBasePage';
 import KnowledgeBaseDetailPage from './pages/KnowledgeBaseDetailPage';
-import { documents as initialDocuments } from './mocks/data';
-import type { KnowledgeBase } from './types/document';
+import Icon from './components/Icon';
+import type { DocumentListState, KnowledgeBase } from './types/document';
 import type { Attachment, Conversation, MessageFromApi, RagSourceFromApi } from './types/chat';
 import {checkHealth, getDocuments, getKnowledgeBases, uploadDocument, deleteDocument, createKnowledgeBase, streamRagQuestion, getConversations,getConversationMessages, createConversation, saveConversationMessage, deleteConversation,} from './services/api';
 import constants from '../../shared/constants.json';
+
+type Theme = 'light' | 'dark';
+const themeKey = 'vit-ai:theme:v1';
+
+function initialTheme(): Theme {
+  try {
+    const saved = window.localStorage.getItem(themeKey);
+    if (saved === 'light' || saved === 'dark') return saved;
+  } catch {
+    // The system preference still works when storage is blocked.
+  }
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function requestWorkspaceOverview() {
+  return {
+    health: checkHealth(AbortSignal.timeout(5000)),
+    bases: getKnowledgeBases(),
+    conversations: getConversations(),
+  };
+}
 
 function freshConversation(): Conversation {
   return {
@@ -19,9 +40,13 @@ function freshConversation(): Conversation {
 }
 export default function App() {
   const [page, setPage] = useState<'chat' | 'documents'>('chat');
+  const [theme, setTheme] = useState(initialTheme);
+  const [showStreaming, setShowStreaming] = useState(true);
   const [conversations, setConversations] = useState<Conversation[]>(() => [freshConversation()]);
+  const overviewRequestsRef = useRef<ReturnType<typeof requestWorkspaceOverview> | null>(null);
   const sendingRef = useRef(false);
   const loadingMessagesRef = useRef(new Set<string>());
+  const loadingDocumentsRef = useRef(new Set<string>());
   const streamControllerRef = useRef<AbortController | null>(null);
   const [streamConversationId, setStreamConversationId] =
     useState<string | null>(null);
@@ -29,12 +54,22 @@ export default function App() {
   function stopGenerating() {
     streamControllerRef.current?.abort();
   }
+
+  function toggleTheme() {
+    const nextTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(nextTheme);
+    try {
+      window.localStorage.setItem(themeKey, nextTheme);
+    } catch {
+      // The selected theme remains active for this session.
+    }
+  }
   const [activeId, setActiveId] = useState<string | null>(null);
   const [bases, setBases] = useState<KnowledgeBase[]>([]);
   const [basesError, setBasesError] = useState('');
   const [historyError, setHistoryError] = useState('');
   const [uploading, setUploading] = useState(false);
-  const [documents, setDocuments] = useState(initialDocuments);
+  const [documentLists, setDocumentLists] = useState<Partial<Record<string, DocumentListState>>>({});
   const [selectedBase, setSelectedBase] = useState<string | null>(null);
   const [health, setHealth] = useState<'checking' | 'online' | 'offline'>('checking');
   const active =
@@ -61,52 +96,30 @@ export default function App() {
     });
 
   const selected = bases.find(b => b.id === selectedBase);
-useEffect(() => {
-  const controller = new AbortController();
+  useEffect(() => {
+    let cancelled = false;
+    const requests = overviewRequestsRef.current ??= requestWorkspaceOverview();
 
-  const timeout = window.setTimeout(() => {
-    controller.abort();
-  }, 5000);
+    void requests.health.then(ok => {
+      if (!cancelled) setHealth(ok ? 'online' : 'offline');
+    }).catch(() => {
+      if (!cancelled) setHealth('offline');
+    });
 
-  checkHealth(controller.signal)
-    .then(ok => setHealth(ok ? 'online' : 'offline'))
-    .catch(() => setHealth('offline'));
+    void requests.bases.then(knowledgeBases => {
+      if (cancelled) return;
 
-  return () => {
-    clearTimeout(timeout);
-    controller.abort();
-  };
-}, []);
-useEffect(() => {
-  async function loadData() {
-    try {
-      
-      const knowledgeBases = await getKnowledgeBases();
-
-      
-      const documentLists = await Promise.all(
-        knowledgeBases.map(base => getDocuments(base.id)),
-      );
-
-      setBases(knowledgeBases);
-
-      // Gộp danh sách file của các bộ thành một danh sách.
-      setDocuments(documentLists.flat());
-
+      setBases(current => [
+        ...knowledgeBases,
+        ...current.filter(base => !knowledgeBases.some(loaded => loaded.id === base.id)),
+      ]);
       setBasesError('');
-    } catch {
-      setBasesError('Không tải được bộ tài liệu hoặc danh sách file.');
-    }
-  }
+    }).catch(() => {
+      if (!cancelled) setBasesError('Không tải được danh sách bộ tài liệu.');
+    });
 
-  loadData();
-}, []);
-useEffect(() => {
-  let cancelled = false;
-
-  async function loadHistory() {
-    try {
-      const savedConversations = await getConversations();
+    void requests.conversations.then(savedConversations => {
+      if (cancelled) return;
 
       const history: Conversation[] = savedConversations.map(conversation => ({
         id: conversation.id,
@@ -114,31 +127,41 @@ useEffect(() => {
         messages: [],
         messagesState: 'unloaded',
       }));
-
-      if (cancelled) return;
-
-      
       setConversations(current => [
         ...current,
-        ...history.filter(
-          saved => !current.some(item => item.id === saved.id),
-        ),
+        ...history.filter(saved => !current.some(item => item.id === saved.id)),
       ]);
-
       setHistoryError('');
+    }).catch(() => {
+      if (!cancelled) setHistoryError('Không tải được lịch sử hội thoại.');
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function loadKnowledgeBaseDocuments(id: string) {
+    if (documentLists[id]?.status === 'loaded' || loadingDocumentsRef.current.has(id)) return;
+
+    loadingDocumentsRef.current.add(id);
+    setDocumentLists(current => ({ ...current, [id]: { status: 'loading' } }));
+
+    try {
+      const files = await getDocuments(id);
+      setDocumentLists(current => ({ ...current, [id]: { status: 'loaded', files } }));
     } catch {
-      if (!cancelled) {
-        setHistoryError('Không tải được lịch sử hội thoại.');
-      }
+      setDocumentLists(current => ({ ...current, [id]: { status: 'error' } }));
+    } finally {
+      loadingDocumentsRef.current.delete(id);
     }
   }
 
-  loadHistory();
+  function handleOpenKnowledgeBase(id: string) {
+    setSelectedBase(id);
+    void loadKnowledgeBaseDocuments(id);
+  }
 
-  return () => {
-    cancelled = true;
-  };
-}, []);
 async function handleUpload(
   knowledgeBaseId: string,
   files: File[],
@@ -157,7 +180,14 @@ async function handleUpload(
         file,
       );
 
-      setDocuments(old => [...old, uploadedFile]);
+      setDocumentLists(current => {
+        const list = current[knowledgeBaseId];
+        if (list?.status !== 'loaded') return current;
+        return {
+          ...current,
+          [knowledgeBaseId]: { status: 'loaded', files: [...list.files, uploadedFile] },
+        };
+      });
     }
   } catch (error) {
     setBasesError(
@@ -169,7 +199,7 @@ async function handleUpload(
     setUploading(false);
   }
 }
-async function handleDeleteDocument(fileId: string) {
+async function handleDeleteDocument(knowledgeBaseId: string, fileId: string) {
   const confirmed = window.confirm(
     'Bạn có chắc muốn xóa tài liệu này?',
   );
@@ -181,7 +211,14 @@ async function handleDeleteDocument(fileId: string) {
   try {
     await deleteDocument(fileId);
 
-    setDocuments(old => old.filter(file => file.id !== fileId));
+    setDocumentLists(current => {
+      const list = current[knowledgeBaseId];
+      if (list?.status !== 'loaded') return current;
+      return {
+        ...current,
+        [knowledgeBaseId]: { status: 'loaded', files: list.files.filter(file => file.id !== fileId) },
+      };
+    });
   } catch (error) {
     setBasesError(
       error instanceof Error
@@ -190,19 +227,16 @@ async function handleDeleteDocument(fileId: string) {
     );
   }
 }
-async function handleCreateKnowledgeBase(name: string) {
+async function handleCreateKnowledgeBase(name: string): Promise<string | null> {
   setBasesError('');
 
   try {
     const newBase = await createKnowledgeBase(name);
 
-    setBases(old => [...old, newBase]);
+    setBases(old => [...old, { ...newBase, document_count: newBase.document_count ?? 0 }]);
+    return null;
   } catch (error) {
-    setBasesError(
-      error instanceof Error
-        ? error.message
-        : 'Không tạo được bộ tài liệu.',
-    );
+    return error instanceof Error ? error.message : 'Không tạo được bộ tài liệu.';
   }
 }
 async function handleDeleteConversation(
@@ -622,15 +656,18 @@ try {
 }
 const chatContent =
   active.messagesState === 'error' ? (
-    <button
-      type="button"
-      className="secondary"
-      onClick={() => void loadConversationMessages(active.id)}
-    >
-      Không tải được tin nhắn. Thử lại
-    </button>
+    <div className="chat-load-state">
+      <span className="page-icon"><Icon name="chat" size={24} /></span>
+      <h1>Không tải được tin nhắn</h1>
+      <button type="button" className="secondary" onClick={() => void loadConversationMessages(active.id)}>
+        Thử lại
+      </button>
+    </div>
   ) : active.messagesState === 'loading' || active.messagesState === 'unloaded' ? (
-    <p role="status">Đang tải tin nhắn…</p>
+    <div className="chat-load-state" role="status">
+      <span className="status-spinner" />
+      <p>Đang tải tin nhắn…</p>
+    </div>
   ) : (
     <ChatPage
       key={active.id ?? 'unsaved-draft'}
@@ -639,6 +676,62 @@ const chatContent =
       onSend={send}
       canStop={active.id !== null && active.id === streamConversationId}
       onStop={stopGenerating}
+      showStreaming={showStreaming}
     />
   );
-  return <div className="app"><Sidebar page={page} onNavigate={p => { setPage(p); setSelectedBase(null); }} conversations={visibleConversations} activeId={active.id} onSelect={handleSelectConversation} onNew={newChat} onDelete={handleDeleteConversation}/><main className="main"><div className="demo-bar">{basesError && <span role="alert">{basesError}</span>}{historyError && <span role="alert">{historyError}</span>}{uploading && <span>Đang tải và xử lý tài liệu...</span>}<span>GIAO DIỆN MẪU</span><span className="backend-status">API {health === 'checking' ? 'đang kiểm tra…' : health === 'online' ? 'đã kết nối · RAG chưa tích hợp' : 'chưa kết nối'}</span></div>{page === 'chat' ? chatContent : selected ?<KnowledgeBaseDetailPage knowledgeBase={selected} documents={documents.filter(d => d.knowledgeBaseId === selected.id)} onBack={() => setSelectedBase(null)} onAdd={files => handleUpload(selected.id, files)} onDelete={handleDeleteDocument}/> : <KnowledgeBasePage knowledgeBases={bases} documents={documents} onOpen={setSelectedBase} onCreate={handleCreateKnowledgeBase}/>}</main></div>;}
+  return (
+    <div className="app" data-theme={theme}>
+      <a className="skip-link" href="#workspace-main">Đến nội dung</a>
+      <Sidebar
+        page={page}
+        health={health}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        showStreaming={showStreaming}
+        onShowStreaming={setShowStreaming}
+        onNavigate={destination => {
+          setPage(destination);
+          setSelectedBase(null);
+        }}
+        conversations={visibleConversations}
+        activeId={active.id}
+        onSelect={handleSelectConversation}
+        onNew={newChat}
+        onDelete={handleDeleteConversation}
+      />
+      <main className="main" id="workspace-main" tabIndex={-1}>
+        {(basesError || historyError || uploading) && (
+          <div className="workspace-notices">
+            {basesError && <p className="error" role="alert">{basesError}</p>}
+            {historyError && <p className="error" role="alert">{historyError}</p>}
+            {uploading && (
+              <p className="working-notice" role="status">
+                <i className="status-spinner" />Đang tải và xử lý tài liệu…
+              </p>
+            )}
+          </div>
+        )}
+        {page === 'chat' ? chatContent : selected ? (
+          <KnowledgeBaseDetailPage
+            knowledgeBase={selected}
+            documentList={documentLists[selected.id]}
+            uploading={uploading}
+            onBack={() => setSelectedBase(null)}
+            onRetry={() => void loadKnowledgeBaseDocuments(selected.id)}
+            onAdd={files => handleUpload(selected.id, files)}
+            onDelete={fileId => handleDeleteDocument(selected.id, fileId)}
+          />
+        ) : (
+          <KnowledgeBasePage
+            knowledgeBases={bases.map(base => {
+              const list = documentLists[base.id];
+              return list?.status === 'loaded' ? { ...base, document_count: list.files.length } : base;
+            })}
+            onOpen={handleOpenKnowledgeBase}
+            onCreate={handleCreateKnowledgeBase}
+          />
+        )}
+      </main>
+    </div>
+  );
+}

@@ -1,14 +1,69 @@
 import { useRef, useState } from 'react';
 import Icon from '../Icon';
 import constants from '../../../../shared/constants.json';
-export default function UploadZone({ onSelect }: { onSelect: (files: File[]) => void }) {
+
+const maxSizeMb = constants.max_file_size_bytes / 1024 / 1024;
+
+export default function UploadZone({
+  onSelect, uploading,
+}: { onSelect: (files: File[]) => void; uploading: boolean }) {
   const input = useRef<HTMLInputElement>(null);
   const [error, setError] = useState('');
   const [dragging, setDragging] = useState(false);
+
   function select(files: File[]) {
-    const valid = files.filter(f => constants.allowed_extensions.some(ext => f.name.toLowerCase().endsWith(ext)) && f.size <= constants.max_file_size_bytes);
-    setError(valid.length < files.length ? `Chỉ nhận PDF, DOCX, PNG hoặc JPG, tối đa ${constants.max_file_size_bytes / 1024 / 1024} MB mỗi file.` : '');
-    onSelect(valid);
+    if (uploading) return;
+
+    const valid = files.filter(file =>
+      constants.allowed_extensions.some(extension => file.name.toLowerCase().endsWith(extension)) &&
+      file.size <= constants.max_file_size_bytes,
+    );
+    setError(valid.length < files.length
+      ? 'Chỉ nhận PDF, DOCX, PNG hoặc JPG, tối đa ' + maxSizeMb + ' MB mỗi tệp.'
+      : '');
+    if (valid.length) onSelect(valid);
   }
-  return <><div className={`upload-zone ${dragging ? 'dragging' : ''}`} onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={e => { e.preventDefault(); setDragging(false); select(Array.from(e.dataTransfer.files)); }}><span className="upload-icon"><Icon name="upload" size={26}/></span><h3>Kéo thả tài liệu vào đây</h3><p>PDF, DOCX, PNG hoặc JPG · Tối đa {constants.max_file_size_bytes / 1024 / 1024} MB mỗi file</p><button className="secondary" onClick={() => input.current?.click()}>Chọn từ máy tính</button><input ref={input} type="file" hidden multiple accept={constants.allowed_extensions.join(',')} onChange={e => { select(Array.from(e.target.files ?? [])); e.target.value = ''; }}/></div>{error && <p className="error" role="alert">{error}</p>}</>;
+
+  return (
+    <div className="upload-area">
+      <div
+        className={'upload-zone' + (dragging ? ' dragging' : '')}
+        onDragOver={event => {
+          event.preventDefault();
+          if (!uploading) setDragging(true);
+        }}
+        onDragLeave={event => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false);
+        }}
+        onDrop={event => {
+          event.preventDefault();
+          setDragging(false);
+          select(Array.from(event.dataTransfer.files));
+        }}
+      >
+        <span className="upload-icon"><Icon name="upload" size={24} /></span>
+        <div className="upload-copy">
+          <h2>Thêm tài liệu</h2>
+          <p>Kéo thả hoặc chọn file từ máy. Tối đa {maxSizeMb} MB mỗi tệp.</p>
+          <small>PDF và DOCX hỗ trợ tìm kiếm. Ảnh cần OCR.</small>
+        </div>
+        <button className="secondary" type="button" disabled={uploading} onClick={() => input.current?.click()}>
+          <Icon name={uploading ? 'history' : 'plus'} size={18} />
+          {uploading ? 'Đang tải…' : 'Chọn tệp'}
+        </button>
+        <input
+          ref={input}
+          type="file"
+          hidden
+          multiple
+          accept={constants.allowed_extensions.join(',')}
+          onChange={event => {
+            select(Array.from(event.target.files ?? []));
+            event.target.value = '';
+          }}
+        />
+      </div>
+      {error && <p className="error" role="alert">{error}</p>}
+    </div>
+  );
 }

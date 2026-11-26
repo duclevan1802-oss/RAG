@@ -51,9 +51,7 @@ def replace_document_chunks(
     knowledge_base_id: str,
 ) -> int:
     document_id = ObjectId(document.id)
-    knowledge_base_object_id = ObjectId(
-        knowledge_base_id
-    )
+    knowledge_base_object_id = ObjectId(knowledge_base_id)
 
     now = datetime.now(timezone.utc)
 
