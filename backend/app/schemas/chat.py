@@ -43,7 +43,7 @@ class RagChatResponse(ChatResponse):
 
 
 class RagStreamEvent(BaseModel):
-    type: Literal["sources", "thinking", "token", "done", "error"]
+    type: Literal["sources", "progress", "thinking", "token", "done", "error"]
     content: str | None = None
     sources: list[RetrievedChunk] | None = None
     done_reason: str | None = None

@@ -676,6 +676,7 @@ p { line-height: 1.65; }
 .sources blockquote + blockquote { border-top: 1px solid var(--border); }
 .sources blockquote strong { color: var(--ink); }
 .sources blockquote p { margin-top: .25rem; }
+.source-reference { display: block; margin-bottom: .25rem; }
 .source-page { margin-left: .5rem; white-space: nowrap; }
 
 .documents-page {

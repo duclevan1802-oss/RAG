@@ -1,14 +1,14 @@
-# RAG Local
+# VIT AI
 
-Khung dự án chat và quản lý kho tài liệu chạy local.
+Trợ lý chat RAG và quản lý kho tài liệu. Backend và frontend chạy trên máy, còn GPT-OSS 20B tạo câu trả lời qua Groq.
 
 ## Công nghệ
 
 - Backend: Python, FastAPI
-- LLM: Qwen3 4B qua Ollama
+- GPT-OSS 20B qua Groq, gọi bằng LangChain `ChatGroq`.
 - Embedding: Sentence Transformers, AITeamVN/Vietnamese_Embedding
 - Vector database: ChromaDB
-- Metadata và lịch sử chat: MongoDB
+- MongoDB lưu metadata và lịch sử chat. GridFS lưu file gốc.
 - Đọc tài liệu: PyMuPDF, python-docx; ảnh và PDF scan cần OCR
 - Frontend: React, TypeScript, Vite
 
@@ -20,7 +20,7 @@ backend/app/
   core/           # Cấu hình môi trường
   db/             # Kết nối MongoDB, ChromaDB
   schemas/        # Schema request/response
-  services/       # Embedding, retrieval, OCR, Ollama
+  services/       # Embedding, truy xuất tài liệu, gọi Groq
     parsers/      # Bộ đọc PDF, DOCX
   workers/        # Tiến trình nạp tài liệu
 frontend/src/
@@ -29,43 +29,41 @@ frontend/src/
   services/       # Gọi backend
   types/          # Kiểu dữ liệu
 storage/
-  uploads/        # File gốc
   chroma/         # Dữ liệu vector local
 ```
 
-## Chạy khung backend (PowerShell)
+## Chạy backend (PowerShell)
 
 ```powershell
 cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-Copy-Item .env.example .env
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
+```
+
+Điền `MONGODB_URI` và `GROQ_API_KEY` trong `backend/.env`. Model mặc định là `openai/gpt-oss-20b`. Nếu đã có `.env`, cập nhật trực tiếp các biến cần thiết.
+
+```powershell
 uvicorn app.main:app --reload
 ```
 
 API: http://localhost:8000/health · Swagger: http://localhost:8000/docs
 
-`requirements.txt` chứa gói cho khung FastAPI. Các gói dự kiến dùng cho RAG nằm trong `requirements-rag.txt` và được cài khi triển khai phần tương ứng.
-
-## Chạy khung frontend
+## Chạy frontend
 
 ```powershell
 cd frontend
 npm install
-Copy-Item .env.example .env
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
 npm run dev
 ```
 
 Frontend: http://localhost:5173
 
-## Những phần cần triển khai tiếp
+## Khởi động và thử chat
 
-1. Kết nối MongoDB và ChromaDB.
-2. Upload, lưu file, metadata, và trạng thái xử lý.
-3. Parse PDF/DOCX, OCR ảnh, chia đoạn và embedding.
-4. Retrieval theo phạm vi kho tài liệu hoặc hội thoại.
-5. Chat streaming qua Ollama, lưu lịch sử và trích dẫn nguồn.
-6. Giao diện quản lý tài liệu và đính kèm file trong chat.
+Sau khi cài thư viện và điền cấu hình, chạy `.\start.ps1` từ thư mục gốc để mở cả frontend và backend.
 
-Hiện tại đây là cấu trúc ban đầu có API health và giao diện tĩnh; chưa có tính năng RAG, upload hay chat thực tế. Chưa cài dependency hoặc chạy kiểm tra.
+1. Gọi `POST /api/chat` trong Swagger để kiểm tra kết nối Groq.
+2. Mở VIT AI, chọn một bộ tài liệu đã được xử lý và hỏi một câu có đáp án trong tài liệu để kiểm tra streaming và nguồn tham khảo.

@@ -122,6 +122,7 @@ def search_document_chunks(
                 distance=distance,
                 page_number=metadata.get("page_number"),
                 block_number=metadata.get("block_number"),
+                source_number=len(chunks) + 1,
             )
         )
 

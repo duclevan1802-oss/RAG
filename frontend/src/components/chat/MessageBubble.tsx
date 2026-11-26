@@ -38,7 +38,7 @@ export default memo(function MessageBubble({ message, showStreaming }: { message
         {message.streaming && !showAnswer && !showThinking && (
           <p className="message-progress" role="status">
             <i className="status-spinner" aria-hidden="true" />
-            Đang tạo câu trả lời…
+            {message.streamProgress ?? 'Đang tạo câu trả lời…'}
           </p>
         )}
         {(user || showAnswer) && (
@@ -48,7 +48,7 @@ export default memo(function MessageBubble({ message, showStreaming }: { message
               <p className={'message-text' + (message.streaming ? ' is-streaming' : '')}>{message.content}</p>
             )}
             <AttachmentList attachments={message.attachments ?? []} />
-            {!message.streaming && <SourcePanel sources={message.sources ?? []} />}
+            {!message.streaming && <SourcePanel sources={message.sources ?? []} answer={message.content} />}
             {!user && !message.streaming && showAnswer && (
               <div className="message-actions">
                 <button className="copy-answer" type="button" onClick={copyAnswer}>

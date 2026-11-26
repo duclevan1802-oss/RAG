@@ -27,7 +27,7 @@ def build_rag_prompt(
     question: str,
     chunks: list[RetrievedChunk],
 ) -> str:
-    context_parts = []
+    context_parts: list[str] = []
 
     for index, chunk in enumerate(
         chunks,
@@ -47,9 +47,10 @@ def build_rag_prompt(
                 f"{chunk.block_number}"
             )
 
+        number = chunk.source_number or index
         context_parts.append(
-            f"[Nguồn {index}"
-            f"{location}]\n"
+            f"[Nguồn {number}]\n"
+            f"Tài liệu: {chunk.filename}{location}\n"
             f"{chunk.text}"
         )
 
@@ -87,8 +88,10 @@ def build_rag_prompt(
 
     NGUỒN:
 
-    - Chỉ ghi [Nguồn N] cho thông tin thực sự
-    lấy từ tài liệu.
+    - Khi dùng thông tin từ tài liệu, gắn [Nguồn N]
+    ngay sau thông tin đó, dùng đúng số của đoạn.
+    - Giữ đúng dạng [Nguồn N]. Ghi tên tệp hoặc
+    số trang ở ngoài dấu ngoặc nếu cần.
     - Kiến thức chung không được gắn nguồn.
     - Không được tạo nguồn không tồn tại.
     - Có thể kết hợp tài liệu và kiến thức chung

@@ -1,5 +1,6 @@
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import SecretStr
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -14,8 +15,8 @@ class Settings(BaseSettings):
 
     mongodb_uri: str
     mongodb_database: str = "rag_local"
-    ollama_base_url: str ="http://127.0.0.1:11434"
-    ollama_model: str = "qwen3:4b"
+    groq_api_key: SecretStr | None = None
+    groq_model: str = "openai/gpt-oss-20b"
     embedding_model: str = "AITeamVN/Vietnamese_Embedding"
     chroma_dir: Path = BACKEND_DIR.parent / "storage" / "chroma"
     chroma_collection: str = "vietnamese_documents_v1"

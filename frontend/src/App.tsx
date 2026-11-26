@@ -5,7 +5,7 @@ import KnowledgeBasePage from './pages/KnowledgeBasePage';
 import KnowledgeBaseDetailPage from './pages/KnowledgeBaseDetailPage';
 import Icon from './components/Icon';
 import type { DocumentListState, KnowledgeBase } from './types/document';
-import type { Attachment, Conversation, MessageFromApi, RagSourceFromApi } from './types/chat';
+import type { Attachment, Conversation, MessageFromApi, RagSourceFromApi, Source } from './types/chat';
 import {checkHealth, getDocuments, getKnowledgeBases, uploadDocument, deleteDocument, createKnowledgeBase, streamRagQuestion, getConversations,getConversationMessages, createConversation, saveConversationMessage, deleteConversation,} from './services/api';
 import constants from '../../shared/constants.json';
 
@@ -28,6 +28,16 @@ function requestWorkspaceOverview() {
     bases: getKnowledgeBases(),
     conversations: getConversations(),
   };
+}
+
+function displaySources(sources: RagSourceFromApi[]): Source[] {
+  return sources.map(source => ({
+    id: source.chunk_id,
+    filename: source.filename,
+    page: source.page_number ?? undefined,
+    excerpt: source.text,
+    number: source.source_number ?? undefined,
+  }));
 }
 
 function freshConversation(): Conversation {
@@ -349,12 +359,7 @@ async function loadConversationMessages(id: string | null) {
       role: message.role,
       content: message.content,
       thinking: message.thinking ?? undefined,
-      sources: message.sources.map(source => ({
-        id: source.chunk_id,
-        filename: source.filename,
-        page: source.page_number ?? undefined,
-        excerpt: source.text,
-      })),
+      sources: displaySources(message.sources),
     }));
 
     setConversations(old => old.map(item =>
@@ -481,6 +486,36 @@ try {
     let answer = '';
     let thinking = '';
     let sources: RagSourceFromApi[] = [];
+    let visibleSources: Source[] = [];
+    let streamProgress: string | undefined;
+    let renderFrame: number | null = null;
+
+    function renderAssistant(streaming: boolean) {
+      if (renderFrame !== null) {
+        cancelAnimationFrame(renderFrame);
+        renderFrame = null;
+      }
+
+      const update = {
+        content: answer,
+        thinking,
+        streaming,
+        streamProgress: streaming ? streamProgress : undefined,
+        sources: visibleSources,
+      };
+
+      setConversations(old => old.map(conversation => {
+        if (conversation.id !== savedConversationId) return conversation;
+        return {
+          ...conversation,
+          messages: conversation.messages.map(message => (
+            message.id === null &&
+            message.role === 'assistant' &&
+            message.replyToMessageId === replyToMessageId
+          ) ? { ...message, ...update } : message),
+        };
+      }));
+    }
 
     let answerStatus: 'completed' | 'failed' = 'completed';
     const controller = new AbortController();
@@ -493,67 +528,39 @@ try {
         savedConversationId,
         savedUserMessage.id,
         event => {
-          if (event.type === 'thinking') {
-            thinking += event.content;
-          }
-
-          if (event.type === 'token') {
-            answer += event.content;
-          }
-
-          if (event.type === 'sources') {
-            sources = event.sources;
-          }
-          if (event.type === 'done') {
-            sources = sources.filter(
-              (_, index) =>
-                answer.includes(
-                  `[Nguồn ${index + 1}]`
-                ),
-            );
-          }          
-
-          if (
-            event.type === 'done' &&
-            event.done_reason === 'length'
-          ) {
-            answer += '\n\n[Câu trả lời đã đạt giới hạn độ dài.]';
-          }
-
-          setConversations(old =>
-            old.map(conversation => {
-              if (conversation.id !== savedConversationId) {
-                return conversation;
+          switch (event.type) {
+            case 'progress':
+              streamProgress = event.content;
+              break;
+            case 'thinking':
+              thinking += event.content;
+              break;
+            case 'token':
+              answer += event.content;
+              break;
+            case 'sources':
+              sources = event.sources.map((source, index) => ({
+                ...source,
+                source_number: source.source_number ?? index + 1,
+              }));
+              visibleSources = displaySources(sources);
+              return;
+            case 'done':
+              if (event.done_reason === 'length') {
+                answer += '\n\n[Câu trả lời đã đạt giới hạn độ dài.]';
               }
+              renderAssistant(false);
+              return;
+            case 'error':
+              return;
+          }
 
-              return {
-                ...conversation,
-                messages: conversation.messages.map(message => {
-                  const isPendingAssistant =
-                    message.id === null &&
-                    message.role === 'assistant' &&
-                    message.replyToMessageId === replyToMessageId
-
-                  if (!isPendingAssistant) {
-                    return message;
-                  }
-
-                  return {
-                    ...message,
-                    content: answer,
-                    thinking,
-                    streaming: event.type !== 'done',
-                    sources: sources.map(source => ({
-                      id: source.chunk_id,
-                      filename: source.filename,
-                      page: source.page_number ?? undefined,
-                      excerpt: source.text,
-                    })),
-                  };
-                }),
-              };
-            }),
-          );
+          if (renderFrame === null) {
+            renderFrame = requestAnimationFrame(() => {
+              renderFrame = null;
+              renderAssistant(true);
+            });
+          }
         },
         controller.signal,
       );
@@ -572,31 +579,9 @@ try {
           : 'Không nhận được câu trả lời.';
 
         answer += `${answer ? '\n\n' : ''}Có lỗi: ${errorMessage}`;
-    }
+      }
 
-      setConversations(old =>
-        old.map(conversation => {
-          if (conversation.id !==savedConversationId) {
-            return conversation;
-          }
-          
-          return {
-            ...conversation,
-            messages: conversation.messages.map(message =>
-              message.id === null &&
-              message.role === 'assistant' &&
-              message.replyToMessageId === replyToMessageId
-                ? {
-                    ...message,
-                    content: answer,
-                    thinking,
-                    streaming: false,
-                  }
-                : message,
-            ),
-          };
-        }),
-      );
+      renderAssistant(false);
       if (stopped) return;
     } finally {
       streamControllerRef.current = null;

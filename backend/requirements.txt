@@ -3,6 +3,7 @@ uvicorn
 pymongo
 pydantic-settings
 httpx
+langchain-groq
 python-multipart
 PyMuPDF
 python-docx>=1.1.2,<2

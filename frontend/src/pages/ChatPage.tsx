@@ -90,9 +90,9 @@ export default function ChatPage({ conversation, knowledgeBases, onSend, canStop
           <span className="page-icon"><Icon name="chat" size={19} /></span>
           <h1>{hasMessages ? conversation.title : 'Trò chuyện'}</h1>
         </div>
-        <span className="model-chip" title="Mô hình chạy cục bộ">
+        <span className="model-chip" title="Mô hình chạy trên Groq">
           <Icon name="cpu" size={17} />
-          Qwen3 4B
+          GPT-OSS 20B
         </span>
       </header>
 

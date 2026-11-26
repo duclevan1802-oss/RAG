@@ -1,11 +1,11 @@
-# RAG Local — Frontend
+# Frontend VIT AI
 
 React + TypeScript + Vite. Giao diện tiếng Việt gồm chat, đính kèm file, tạo bộ tài liệu, danh sách và trang chi tiết tài liệu.
 
 ```powershell
 cd "C:\VIT AI\frontend"
 npm install
-Copy-Item .env.example .env
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
 npm run dev
 ```
 
@@ -21,8 +21,8 @@ Mở http://localhost:5173. Build production: `npm run build`.
 - `mocks/data.ts`: dữ liệu mẫu.
 - `services/api.ts`: địa chỉ API và kiểm tra `/health`.
 
-## Phạm vi hiện tại
+## Kết nối backend
 
-Giao diện chạy với dữ liệu trong bộ nhớ; tải lại trang sẽ mất thay đổi. Có thể tạo/chuyển/xóa hội thoại, gửi tin nhắn thử, chọn file, tạo bộ tài liệu và xóa file khỏi danh sách tạm. File thực chưa được tải lên hoặc đọc nội dung. Tin nhắn trợ lý thông báo rõ đây là bản thử, chưa gọi LLM. Việc chọn kho trong chat hiện chỉ là giao diện.
+Frontend gọi FastAPI để tải lịch sử và quản lý kho tài liệu. Khi gửi câu hỏi, giao diện nhận nội dung streaming và nguồn tham khảo từ API RAG. Backend gọi GPT-OSS 20B qua Groq. Đặt `GROQ_API_KEY` trong `backend/.env`.
 
-API health chỉ kiểm tra tiến trình FastAPI, không chứng minh Ollama hoặc RAG đang hoạt động. Cần nối các API upload, quản lý tài liệu và chat ở bước backend. Font Google là tùy chọn; khi offline dùng font hệ thống.
+`/health` kiểm tra tiến trình FastAPI. Để kiểm tra model, gửi một câu hỏi qua giao diện hoặc gọi `POST /api/chat` trong Swagger.

@@ -1,5 +1,5 @@
 export interface Attachment { id: string; filename: string }
-export interface Source { id: string; filename: string; page?: number; excerpt: string }
+export interface Source { id: string; filename: string; page?: number; excerpt: string; number?: number }
 export interface Message {
   id: string | null;
   role: 'user' | 'assistant';
@@ -7,6 +7,7 @@ export interface Message {
   content: string;
   thinking?: string;
   streaming?: boolean;
+  streamProgress?: string;
   attachments?: Attachment[];
   sources?: Source[];
 }
@@ -25,6 +26,7 @@ export interface RagSourceFromApi {
   distance: number;
   page_number: number | null;
   block_number: number | null;
+  source_number?: number | null;
 }
 
 export interface RagChatResponse {
@@ -35,7 +37,7 @@ export interface RagChatResponse {
 
 export type RagStreamEvent =
   | { type: 'sources'; sources: RagSourceFromApi[] }
-  | { type: 'thinking' | 'token'; content: string }
+  | { type: 'progress' | 'thinking' | 'token'; content: string }
   | { type: 'done'; done_reason?: string }
   | { type: 'error'; content: string };
 

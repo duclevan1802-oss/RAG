@@ -4,12 +4,10 @@ $root = $PSScriptRoot
 $python = Join-Path $root 'backend\.venv\Scripts\python.exe'
 $vite = Join-Path $root 'frontend\node_modules\vite\bin\vite.js'
 $node = Get-Command node.exe -ErrorAction SilentlyContinue
-$ollama = Get-Command ollama.exe -ErrorAction SilentlyContinue
 
 if (!(Test-Path -LiteralPath $python)) { throw 'Backend Python not found: backend\.venv\Scripts\python.exe' }
 if (!(Test-Path -LiteralPath $vite)) { throw 'Frontend dependencies not found. Run npm install in frontend.' }
 if (-not $node) { throw 'Node.js was not found on PATH.' }
-if (-not $ollama) { throw 'Ollama was not found on PATH.' }
 
 function Test-LocalPort([int]$Port) {
     $client = [System.Net.Sockets.TcpClient]::new()
@@ -31,10 +29,8 @@ New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 $started = [System.Collections.Generic.List[object]]::new()
 $logs = [System.Collections.Generic.List[object]]::new()
 
-function Add-Log([string]$Label, [string]$Path, [bool]$FromEnd = $false) {
-    $offset = 0L
-    if ($FromEnd -and (Test-Path -LiteralPath $Path)) { $offset = (Get-Item -LiteralPath $Path).Length }
-    $logs.Add([pscustomobject]@{ Label = $Label; Path = $Path; Offset = $offset })
+function Add-Log([string]$Label, [string]$Path) {
+    $logs.Add([pscustomobject]@{ Label = $Label; Path = $Path; Offset = 0L })
 }
 
 function Start-ServiceProcess([string]$Label, [string]$File, [string[]]$Arguments, [string]$Directory) {
@@ -67,21 +63,6 @@ function Show-NewLogLines($Log) {
 }
 
 try {
-    $ollamaStatus = Test-JsonEndpoint 'http://127.0.0.1:11434/api/tags'
-    if ($null -ne $ollamaStatus -and $null -ne $ollamaStatus.models) {
-        Write-Host '[OLLAMA] Existing server detected.'
-        if (-not ($ollamaStatus.models | Where-Object { $_.name -eq 'qwen3:4b' })) {
-            Write-Warning 'qwen3:4b not found. Run: ollama pull qwen3:4b'
-        }
-        $existingLog = Join-Path $env:LOCALAPPDATA 'Ollama\server.log'
-        if (Test-Path -LiteralPath $existingLog) { Add-Log 'OLLAMA' $existingLog $true }
-        else { Write-Warning 'Ollama is already running; its server.log was not found.' }
-    } elseif (Test-LocalPort 11434) {
-        throw 'Port 11434 is occupied, but Ollama did not respond correctly.'
-    } else {
-        Start-ServiceProcess 'OLLAMA' $ollama.Source @('serve') $root
-    }
-
     if (Test-LocalPort 8000) {
         $health = Test-JsonEndpoint 'http://127.0.0.1:8000/health'
         if ($null -eq $health -or $health.status -ne 'ok') { throw 'Port 8000 is occupied, but the backend health check failed.' }
@@ -101,7 +82,6 @@ try {
     Write-Host 'Backend docs: http://127.0.0.1:8000/docs'
     Write-Host 'Logs below; press Ctrl+C to stop processes started by this script.'
     Write-Host "Log files: $logDir"
-    Write-Host 'Ollama loaded models: run ollama ps in another terminal.'
 
     while ($true) {
         foreach ($log in $logs) { Show-NewLogLines $log }
@@ -114,7 +94,7 @@ try {
         }
         Start-Sleep -Milliseconds 500
     }
-} 
+}
 finally {
     foreach ($entry in $started) {
         $entry.Process.Refresh()
