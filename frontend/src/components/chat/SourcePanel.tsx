@@ -1,9 +1,12 @@
+// Hiển thị các đoạn RAG tìm được và đánh dấu đoạn AI đã dẫn trong câu trả lời.
+
 import type { Source } from '../../types/chat';
 import Icon from '../Icon';
 
 export default function SourcePanel({ sources, answer }: { sources: Source[]; answer: string }) {
   if (!sources.length) return null;
 
+  // Đối chiếu nhãn [Nguồn N] trong câu trả lời với các đoạn thực tế hệ thống đã tìm thấy.
   const citationNumbers = new Set(
     Array.from(
       answer.normalize('NFC').matchAll(/\[\s*ngu[ồo]n\s+(\d+)\b[^\[\]\r\n]*\]/giu),

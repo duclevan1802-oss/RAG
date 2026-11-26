@@ -1,15 +1,27 @@
-import { memo, useState } from 'react';
+// Hiển thị một tin nhắn, phần suy nghĩ và nguồn của câu trả lời AI.
+
+import { lazy, memo, Suspense, useState } from 'react';
 import type { Message } from '../../types/chat';
 import AttachmentList from './AttachmentList';
 import SourcePanel from './SourcePanel';
 import Icon from '../Icon';
 
-export default memo(function MessageBubble({ message, showStreaming }: { message: Message; showStreaming: boolean }) {
+const activityDots = <span className="activity-dots" aria-hidden="true"><i /><i /><i /></span>;
+
+function PlainMessage({ content, streaming }: { content: string; streaming?: boolean }) {
+  return <p className={streaming ? 'message-text is-streaming' : 'message-text'}>{content}</p>;
+}
+
+// Chỉ tải bộ định dạng khi có câu trả lời AI. Văn bản thường hiện ngay trong lúc chờ.
+const AnswerMarkdown = lazy(() =>
+  import('./AnswerMarkdown').catch(() => ({ default: PlainMessage })),
+);
+
+export default memo(function MessageBubble({ message }: { message: Message }) {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
   const user = message.role === 'user';
   const hasAnswer = Boolean(message.content.trim());
-  const showAnswer = hasAnswer && (showStreaming || !message.streaming);
-  const showThinking = showStreaming && Boolean(message.thinking?.trim());
+  const showThinking = Boolean(message.thinking?.trim());
   const isThinking = message.streaming && !hasAnswer;
 
   async function copyAnswer() {
@@ -22,34 +34,37 @@ export default memo(function MessageBubble({ message, showStreaming }: { message
   }
 
   return (
-    <article className={'message ' + message.role}>
+    <article className={'message ' + message.role + (message.replyToMessageId ? ' is-new-reply' : '')}>
       {!user && <span className="message-avatar"><Icon name="spark" size={19} /></span>}
       <div className="message-body">
+        {!user && <strong className="message-author">VIT AI</strong>}
         {showThinking && (
           <details className="thinking">
             <summary>
-              {isThinking && <i className="status-spinner" aria-hidden="true" />}
+              {isThinking ? activityDots : <Icon name="spark" size={15} />}
               {isThinking ? 'Đang suy nghĩ…' : 'Quá trình suy nghĩ'}
-              <Icon name="chevron" size={15} />
+              <span className="thinking-chevron"><Icon name="chevron" size={15} /></span>
             </summary>
             <p>{message.thinking}</p>
           </details>
         )}
-        {message.streaming && !showAnswer && !showThinking && (
+        {isThinking && !showThinking && (
           <p className="message-progress" role="status">
-            <i className="status-spinner" aria-hidden="true" />
+            {activityDots}
             {message.streamProgress ?? 'Đang tạo câu trả lời…'}
           </p>
         )}
-        {(user || showAnswer) && (
+        {(user || hasAnswer) && (
           <div className="message-bubble">
-            <strong className="message-author">{user ? 'Bạn' : 'VIT AI'}</strong>
-            {showAnswer && (
-              <p className={'message-text' + (message.streaming ? ' is-streaming' : '')}>{message.content}</p>
-            )}
+            {user && <strong className="message-author">Bạn</strong>}
+            {hasAnswer && (user ? <PlainMessage content={message.content} /> : (
+              <Suspense fallback={<PlainMessage content={message.content} streaming={message.streaming} />}>
+                <AnswerMarkdown content={message.content} streaming={message.streaming} />
+              </Suspense>
+            ))}
             <AttachmentList attachments={message.attachments ?? []} />
             {!message.streaming && <SourcePanel sources={message.sources ?? []} answer={message.content} />}
-            {!user && !message.streaming && showAnswer && (
+            {!user && !message.streaming && hasAnswer && (
               <div className="message-actions">
                 <button className="copy-answer" type="button" onClick={copyAnswer}>
                   <Icon name={copyStatus === 'copied' ? 'check' : 'copy'} size={16} />

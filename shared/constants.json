@@ -6,6 +6,7 @@
   "embedding_max_seq_length": 2048,
   "conversation_default_title": "Cuộc trò chuyện mới",
   "conversation_title_max_length": 200,
+  "question_max_length": 16000,
   "message_max_length": 100000,
   "conversation_auto_title_length": 44,
   "retrieval_max_distance": 0.65,

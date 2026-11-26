@@ -1,3 +1,5 @@
+# Đầu vào HTTP cho việc tải file, đọc nội dung, lập chỉ mục lại và xóa file.
+
 from mimetypes import guess_type
 from pathlib import Path
 from urllib.parse import quote
@@ -53,6 +55,7 @@ def upload_document(
         if extension not in ALLOWED_EXTENSIONS:
             raise HTTPException(415, "Chỉ nhận PDF, DOCX, PNG và JPG.")
 
+        # Đọc nhiều hơn giới hạn đúng một byte để phát hiện file quá lớn mà không nạp toàn bộ file.
         content = file.file.read(MAX_FILE_SIZE + 1)
 
         if not content:
@@ -61,6 +64,7 @@ def upload_document(
         if len(content) > MAX_FILE_SIZE:
             raise HTTPException(413, f"File vượt quá {MAX_FILE_SIZE // (1024 * 1024)} MB.")
 
+        # Lưu file gốc trước để có thể tải lại hoặc lập chỉ mục lại nếu xử lý nội dung gặp lỗi.
         document = upload_to_atlas(
             filename,
             content,
@@ -118,6 +122,7 @@ def get_document_file(file_id: str, download: bool = False):
         raise HTTPException(503, "Không đọc được file từ Atlas.")
 
     media_type = guess_type(filename)[0] or "application/octet-stream"
+    # Tham số download quyết định trình duyệt tải file xuống hay mở trực tiếp.
     disposition = "attachment" if download else "inline"
 
     return Response(
@@ -259,6 +264,7 @@ def get_document_chunks_api(
     try:
         get_atlas_file_info(file_id)
 
+        # Endpoint này đọc nội dung đoạn văn bản trong document_chunks. Chroma phục vụ tìm theo vector.
         chunks = list_document_chunks(
             file_id
         )

@@ -1,3 +1,5 @@
+// Điều hướng, chọn hội thoại và hiển thị kết nối API trên desktop và điện thoại.
+
 import { useRef, useState, useSyncExternalStore } from 'react';
 import type { Conversation } from '../../types/chat';
 import Icon from '../Icon';
@@ -5,10 +7,6 @@ import Icon from '../Icon';
 interface Props {
   page: 'chat' | 'documents';
   health: 'checking' | 'online' | 'offline';
-  theme: 'light' | 'dark';
-  showStreaming: boolean;
-  onToggleTheme: () => void;
-  onShowStreaming: (show: boolean) => void;
   conversations: Conversation[];
   activeId: string | null;
   onNavigate: (page: 'chat' | 'documents') => void;
@@ -23,6 +21,7 @@ const healthLabels = {
   offline: 'API chưa kết nối',
 };
 
+// Dùng cùng mốc kích thước với CSS để thay thanh bên bằng menu trên điện thoại.
 const mobileLayout = window.matchMedia('(max-width: 51.25rem)');
 
 function subscribeToLayout(onChange: () => void) {
@@ -35,7 +34,7 @@ function isMobileLayout() {
 }
 
 function SidebarContent({
-  page, health, theme, showStreaming, onToggleTheme, onShowStreaming,
+  page, health,
   conversations, activeId, onNavigate, onSelect, onNew, onDelete, onClose,
 }: Props & { onClose?: () => void }) {
   return (
@@ -109,20 +108,7 @@ function SidebarContent({
         </div>
       </section>
 
-      <div className="sidebar-settings">
-        <label className="stream-setting">
-          <span><strong>Xem streaming</strong><small>Hiện nội dung khi AI đang tạo</small></span>
-          <input
-            type="checkbox"
-            role="switch"
-            checked={showStreaming}
-            onChange={event => onShowStreaming(event.target.checked)}
-          />
-        </label>
-        <button className="theme-button" type="button" onClick={onToggleTheme}>
-          <Icon name={theme === 'light' ? 'moon' : 'sun'} size={17} />
-          {theme === 'light' ? 'Chuyển sang chế độ tối' : 'Chuyển sang chế độ sáng'}
-        </button>
+      <div className="sidebar-footer">
         <p className={'connection-label ' + health} role="status"><i />{healthLabels[health]}</p>
       </div>
     </>

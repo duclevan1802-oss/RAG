@@ -1,3 +1,5 @@
+// Đổi mã trạng thái tài liệu từ API thành nhãn tiếng Việt.
+
 import type { DocumentStatus as Status } from '../../types/document';
 const labels: Record<Status, string> = {
   uploaded: 'Đã tải lên',

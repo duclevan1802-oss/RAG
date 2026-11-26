@@ -1,3 +1,5 @@
+// Hiển thị tên tệp đính kèm, kèm nút bỏ tệp nếu nơi gọi truyền thao tác đó.
+
 import type { Attachment } from '../../types/chat';
 import Icon from '../Icon';
 

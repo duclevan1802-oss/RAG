@@ -1,3 +1,5 @@
+# Định nghĩa nguồn RAG, gồm nội dung đoạn, vị trí, khoảng cách và số trích dẫn.
+
 from pydantic import BaseModel, Field
 
 class RetrievedChunk(BaseModel):

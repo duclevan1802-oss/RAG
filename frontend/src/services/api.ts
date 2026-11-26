@@ -1,7 +1,10 @@
+// Tập trung các lời gọi FastAPI và đọc phản hồi JSON thường hoặc luồng NDJSON.
+
 import type {Document, DocumentStatus, KnowledgeBase,} from '../types/document';
-import type {ConversationFromApi, MessageFromApi, RagChatResponse, RagStreamEvent, MessageCreateRequest} from '../types/chat';
+import type {ConversationFromApi, MessageFromApi, MessagePageFromApi, RagChatResponse, RagStreamEvent, MessageCreateRequest} from '../types/chat';
 
 
+// Dùng địa chỉ từ cấu hình Vite và bỏ dấu gạch cuối để ghép đường dẫn endpoint.
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
 export async function checkHealth(signal?: AbortSignal): Promise<boolean> {
   const response = await fetch(`${API_BASE_URL}/health`, { signal });
@@ -58,6 +61,7 @@ export async function uploadDocument(
   knowledgeBaseId: string,
   file: File,
 ): Promise<Document> {
+  // Gửi file và ID bộ tài liệu dưới dạng multipart. Trình duyệt tự đặt Content-Type kèm boundary.
   const formData = new FormData();
 
   formData.append('knowledge_base_id', knowledgeBaseId);
@@ -215,6 +219,7 @@ export async function streamRagQuestion(
     throw new Error(message);
   }
   if (!response.body) throw new Error('Trình duyệt không nhận được luồng dữ liệu.');
+  // Đọc byte từ cùng một request. Mỗi dòng JSON hoàn chỉnh biểu diễn một sự kiện RAG.
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -230,13 +235,16 @@ export async function streamRagQuestion(
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
+      // Giữ trạng thái UTF-8 giữa các lần đọc để ký tự tiếng Việt bị chia byte vẫn ghép đúng.
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
+      // Phần cuối có thể là một dòng chưa hoàn chỉnh. Giữ lại để nối với lần đọc sau.
       buffer = lines.pop() ?? '';
       lines.forEach(handleLine);
     }
     buffer += decoder.decode();
     if (buffer.trim()) handleLine(buffer);
+    // Sự kiện done xác nhận backend đã báo kết thúc. Hết dữ liệu trước done là luồng bị ngắt.
     if (!completed) throw new Error('Luồng trả lời bị ngắt trước khi hoàn tất.');
   } finally {
     await reader.cancel().catch(() => {});
@@ -255,11 +263,14 @@ export async function getConversations(): Promise<ConversationFromApi[]> {
   return response.json();
 }
 
-export async function getConversationMessages(
+export async function getConversationMessagePage(
   conversationId: string,
-): Promise<MessageFromApi[]> {
+  beforeId?: string,
+): Promise<MessagePageFromApi> {
+  const path = `/api/conversations/${encodeURIComponent(conversationId)}/messages/page`;
+  const query = beforeId ? `?${new URLSearchParams({ before_id: beforeId })}` : '';
   const response = await fetch(
-    `${API_BASE_URL}/api/conversations/${encodeURIComponent(conversationId)}/messages`,
+    `${API_BASE_URL}${path}${query}`,
   );
 
   if (!response.ok) {

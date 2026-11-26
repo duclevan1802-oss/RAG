@@ -1,7 +1,9 @@
+# Nạp các giới hạn và giá trị thống nhất từ shared/constants.json cho Python.
 
 import json
 from pathlib import Path
 
+# Frontend cũng đọc JSON này để giới hạn file và câu hỏi nhất quán với backend.
 _path = Path(__file__).resolve().parents[3] / "shared" / "constants.json"
 with _path.open(encoding="utf-8") as _file:
     _constants = json.load(_file)
@@ -13,6 +15,7 @@ CHUNK_OVERLAP = _constants["chunk_overlap"]
 EMBEDDING_MAX_SEQ_LENGTH = _constants["embedding_max_seq_length"]
 CONVERSATION_DEFAULT_TITLE = _constants["conversation_default_title"]
 CONVERSATION_TITLE_MAX_LENGTH = _constants["conversation_title_max_length"]
+QUESTION_MAX_LENGTH = _constants["question_max_length"]
 MESSAGE_MAX_LENGTH = _constants["message_max_length"]
 CONVERSATION_AUTO_TITLE_LENGTH = _constants["conversation_auto_title_length"]
 RETRIEVAL_MAX_DISTANCE = (_constants[ "retrieval_max_distance"])

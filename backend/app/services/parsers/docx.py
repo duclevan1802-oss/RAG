@@ -1,3 +1,5 @@
+# Đọc đoạn văn và nội dung bảng DOCX theo thứ tự xuất hiện trong file.
+
 from io import BytesIO
 from zipfile import BadZipFile
 

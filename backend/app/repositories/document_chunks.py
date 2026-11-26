@@ -1,15 +1,22 @@
+# Lưu nội dung văn bản đã chia đoạn và kích hoạt chỉ mục mới trong MongoDB.
+
 from datetime import datetime, timezone
 
 from bson import ObjectId
+from pymongo.client_session import ClientSession
 
 from app.core.config import settings
+from app.core.document_operations import DocumentBusyError
 from app.db.mongodb import create_mongo_client
+from app.repositories.documents import document_index_state_filter
 from app.schemas.document import (
     DocumentChunksResponse,
+    DocumentResponse,
     StoredDocumentChunk,
 )
 
 
+# Đây là các đoạn văn bản RAG. Các khối dữ liệu nhị phân của GridFS nằm trong fs.chunks.
 COLLECTION_NAME = "document_chunks"
 
 
@@ -46,18 +53,20 @@ def chunk_from_mongo(
         created_at=created_at,
     )
 
-def replace_document_chunks(
-    document: DocumentChunksResponse,
-    knowledge_base_id: str,
-) -> int:
+# Sau khi Chroma ghi đủ vector, chuyển phiên bản đang hoạt động cùng với nội dung các đoạn.
+def publish_document_index(
+    document: DocumentResponse,
+    chunked: DocumentChunksResponse,
+    index_version: str,
+) -> DocumentResponse:
     document_id = ObjectId(document.id)
-    knowledge_base_object_id = ObjectId(knowledge_base_id)
+    knowledge_base_object_id = ObjectId(document.knowledge_base_id)
 
     now = datetime.now(timezone.utc)
 
     records = []
 
-    for chunk in document.chunks:
+    for chunk in chunked.chunks:
         records.append({
             "_id": ObjectId(),
             "document_id": document_id,
@@ -70,10 +79,8 @@ def replace_document_chunks(
                 chunk.page_number,
             "block_number":
                 chunk.block_number,
-            "chunk_size":
-                document.chunk_size,
-            "overlap":
-                document.overlap,
+            "chunk_size": chunked.chunk_size,
+            "overlap": chunked.overlap,
             "created_at": now,
         })
 
@@ -88,24 +95,32 @@ def replace_document_chunks(
 
         with client.start_session() as session:
 
-            def replace(current_session):
-                collection.delete_many(
-                    {
-                        "document_id":
-                            document_id,
-                    },
+            def publish(current_session: ClientSession) -> None:
+                updated = database["fs.files"].update_one(
+                    document_index_state_filter(document),
+                    {"$set": {
+                        "metadata.status": "ready",
+                        "metadata.active_index_version": index_version,
+                        "metadata.chunk_count": len(records),
+                        "metadata.error": None,
+                    }},
                     session=current_session,
                 )
+                if updated.matched_count == 0:
+                    raise DocumentBusyError("Trạng thái tài liệu đã thay đổi. Hãy thử lại.")
 
-                if records:
-                    collection.insert_many(
-                        records,
-                        session=current_session,
-                    )
+                collection.delete_many({"document_id": document_id}, session=current_session)
+                collection.insert_many(records, session=current_session)
 
-            session.with_transaction(replace)
+            # Giao dịch giữ metadata của file và nội dung các đoạn ở cùng một phiên bản.
+            session.with_transaction(publish)
 
-    return len(records)
+    return document.model_copy(update={
+        "status": "ready",
+        "active_index_version": index_version,
+        "chunk_count": len(records),
+        "error": None,
+    })
 
 def list_document_chunks(
     file_id: str,

@@ -1,3 +1,5 @@
+# Điều phối các thao tác ghi trên cùng một file trong một tiến trình backend.
+
 from contextlib import contextmanager
 from threading import Lock
 
@@ -14,6 +16,7 @@ class DocumentBusyError(Exception):
 
 @contextmanager
 def document_operation(file_id: str):
+    # Chuẩn hóa ID trước khi khóa để mọi cách viết của cùng ObjectId dùng một khóa.
     key = str(ObjectId(file_id))
 
     with _guard:

@@ -1,3 +1,4 @@
+# Các endpoint tạo hội thoại, lưu tin, tải lịch sử và xóa hội thoại.
 from fastapi import APIRouter, HTTPException, Query
 from pymongo.errors import PyMongoError
 
@@ -6,6 +7,7 @@ from app.repositories.conversations import (
     create_conversation,
     list_conversations,
     list_messages,
+    list_message_page,
     delete_conversation,
 )
 from app.schemas.conversation import (
@@ -14,6 +16,7 @@ from app.schemas.conversation import (
     ConversationResponse,
     MessageCreate,
     MessageResponse,
+    MessagePage,
     ConversationDeleteResponse,
 )
 
@@ -105,6 +108,17 @@ def get_messages(
         skip,
         limit,
     )
+
+
+# Frontend lấy tin mới nhất lần đầu, sau đó dùng before_id để tải các trang cũ hơn.
+@router.get("/{conversation_id}/messages/page", response_model=MessagePage)
+def get_message_page(
+    conversation_id: str,
+    before_id: str | None = Query(default=None, min_length=1, max_length=128),
+    limit: int = Query(default=50, ge=1, le=100),
+):
+    return run_conversation_action(list_message_page, conversation_id, before_id, limit)
+
 
 @router.delete(
     "/{conversation_id}",

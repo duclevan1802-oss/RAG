@@ -1,3 +1,5 @@
+// Quản lý điều hướng, dữ liệu kho tài liệu, lịch sử và luồng gửi câu hỏi của ứng dụng.
+
 import { useEffect, useRef, useState } from 'react';
 import Sidebar from './components/layout/Sidebar';
 import ChatPage from './pages/ChatPage';
@@ -6,21 +8,8 @@ import KnowledgeBaseDetailPage from './pages/KnowledgeBaseDetailPage';
 import Icon from './components/Icon';
 import type { DocumentListState, KnowledgeBase } from './types/document';
 import type { Attachment, Conversation, MessageFromApi, RagSourceFromApi, Source } from './types/chat';
-import {checkHealth, getDocuments, getKnowledgeBases, uploadDocument, deleteDocument, createKnowledgeBase, streamRagQuestion, getConversations,getConversationMessages, createConversation, saveConversationMessage, deleteConversation,} from './services/api';
+import {checkHealth, getDocuments, getKnowledgeBases, uploadDocument, deleteDocument, createKnowledgeBase, streamRagQuestion, getConversations, getConversationMessagePage, createConversation, saveConversationMessage, deleteConversation,} from './services/api';
 import constants from '../../shared/constants.json';
-
-type Theme = 'light' | 'dark';
-const themeKey = 'vit-ai:theme:v1';
-
-function initialTheme(): Theme {
-  try {
-    const saved = window.localStorage.getItem(themeKey);
-    if (saved === 'light' || saved === 'dark') return saved;
-  } catch {
-    // The system preference still works when storage is blocked.
-  }
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
 
 function requestWorkspaceOverview() {
   return {
@@ -40,6 +29,7 @@ function displaySources(sources: RagSourceFromApi[]): Source[] {
   }));
 }
 
+// Bản nháp dùng id null. Backend chỉ tạo hội thoại khi người dùng gửi câu hỏi đầu tiên.
 function freshConversation(): Conversation {
   return {
     id: null,
@@ -50,8 +40,6 @@ function freshConversation(): Conversation {
 }
 export default function App() {
   const [page, setPage] = useState<'chat' | 'documents'>('chat');
-  const [theme, setTheme] = useState(initialTheme);
-  const [showStreaming, setShowStreaming] = useState(true);
   const [conversations, setConversations] = useState<Conversation[]>(() => [freshConversation()]);
   const overviewRequestsRef = useRef<ReturnType<typeof requestWorkspaceOverview> | null>(null);
   const sendingRef = useRef(false);
@@ -65,15 +53,6 @@ export default function App() {
     streamControllerRef.current?.abort();
   }
 
-  function toggleTheme() {
-    const nextTheme = theme === 'light' ? 'dark' : 'light';
-    setTheme(nextTheme);
-    try {
-      window.localStorage.setItem(themeKey, nextTheme);
-    } catch {
-      // The selected theme remains active for this session.
-    }
-  }
   const [activeId, setActiveId] = useState<string | null>(null);
   const [bases, setBases] = useState<KnowledgeBase[]>([]);
   const [basesError, setBasesError] = useState('');
@@ -108,6 +87,7 @@ export default function App() {
   const selected = bases.find(b => b.id === selectedBase);
   useEffect(() => {
     let cancelled = false;
+    // Dùng lại các promise khởi động khi React StrictMode chạy lại effect trong lúc phát triển.
     const requests = overviewRequestsRef.current ??= requestWorkspaceOverview();
 
     void requests.health.then(ok => {
@@ -128,6 +108,7 @@ export default function App() {
       if (!cancelled) setBasesError('Không tải được danh sách bộ tài liệu.');
     });
 
+    // Danh sách ban đầu chỉ cần tiêu đề. Nội dung được tải theo hội thoại khi người dùng mở.
     void requests.conversations.then(savedConversations => {
       if (cancelled) return;
 
@@ -151,6 +132,7 @@ export default function App() {
     };
   }, []);
 
+  // Tải file theo từng bộ khi mở, đồng thời dùng lại danh sách đã tải trong phiên.
   async function loadKnowledgeBaseDocuments(id: string) {
     if (documentLists[id]?.status === 'loaded' || loadingDocumentsRef.current.has(id)) return;
 
@@ -338,23 +320,29 @@ function newChat() {
   setActiveId(null);
   setPage('chat');
 }
-async function loadConversationMessages(id: string | null) {
+async function loadConversationMessages(id: string | null, beforeId?: string, beforePrepend?: () => void) {
   if (id === null || loadingMessagesRef.current.has(id)) return;
 
   const conversation = conversations.find(item => item.id === id);
-  if (
-    conversation?.messagesState !== 'unloaded' &&
-    conversation?.messagesState !== 'error'
-  ) return;
+  if (!conversation) return;
+  if (beforeId ? conversation.olderMessagesCursor !== beforeId : (
+    conversation.messagesState !== 'unloaded' &&
+    conversation.messagesState !== 'error'
+  )) return;
 
   loadingMessagesRef.current.add(id);
-  setConversations(old => old.map(item =>
-    item.id === id ? { ...item, messagesState: 'loading' } : item,
-  ));
+  if (!beforeId) {
+    setConversations(old => old.map(item =>
+      item.id === id ? { ...item, messagesState: 'loading' } : item,
+    ));
+  } else {
+    setHistoryError('');
+  }
 
   try {
-    const data = await getConversationMessages(id);
-    const messages = data.map(message => ({
+    // Lần đầu lấy trang mới nhất. Khi có beforeId, tải tin đứng trước và chèn lên đầu.
+    const messagePage = await getConversationMessagePage(id, beforeId);
+    const messages = messagePage.messages.map(message => ({
       id: message.id,
       role: message.role,
       content: message.content,
@@ -362,13 +350,25 @@ async function loadConversationMessages(id: string | null) {
       sources: displaySources(message.sources),
     }));
 
-    setConversations(old => old.map(item =>
-      item.id === id ? { ...item, messages, messagesState: 'loaded' } : item,
-    ));
+    // Cho ChatPage ghi lại vị trí cuộn ngay trước khi chèn các tin cũ.
+    beforePrepend?.();
+    setConversations(old => old.map(item => {
+      if (item.id !== id) return item;
+      return {
+        ...item,
+        messages: beforeId ? [...messages, ...item.messages] : messages,
+        messagesState: 'loaded',
+        olderMessagesCursor: messagePage.next_before_id,
+      };
+    }));
   } catch {
-    setConversations(old => old.map(item =>
-      item.id === id ? { ...item, messagesState: 'error' } : item,
-    ));
+    if (beforeId) {
+      setHistoryError('Không tải được tin nhắn cũ hơn. Hãy thử lại.');
+    } else {
+      setConversations(old => old.map(item =>
+        item.id === id ? { ...item, messagesState: 'error' } : item,
+      ));
+    }
   } finally {
     loadingMessagesRef.current.delete(id);
   }
@@ -379,6 +379,13 @@ function handleSelectConversation(id: string | null) {
   setPage('chat');
   void loadConversationMessages(id);
 }
+
+function handleDraftChange(draft: string) {
+  setConversations(old => old.map(conversation => (
+    conversation.id === active.id ? { ...conversation, draft } : conversation
+  )));
+}
+
 async function send(
   content: string,
   attachments: Attachment[],
@@ -397,6 +404,8 @@ async function send(
   sendingRef.current = true;
   setHistoryError('');
 
+// Giữ bản nháp lúc bấm gửi để nhận biết người dùng có gõ thêm trong lúc chờ lưu hay không.
+const submittedDraft = active.draft;
 let conversationId = active.id;
 
 try {
@@ -432,9 +441,7 @@ try {
       ),
     );
 
-    setActiveId(
-      createdConversation.id
-    );
+    setActiveId(current => current === null ? createdConversation.id : current);
   } else {
     savedUserMessage =
       await saveConversationMessage(
@@ -454,6 +461,7 @@ try {
 
   const savedConversationId:
     string = conversationId;
+    // Gắn ô trả lời tạm với ID câu hỏi để cập nhật đúng tin trong suốt luồng.
     const replyToMessageId = savedUserMessage.id;
     setConversations(old =>
       old.map(conversation =>
@@ -461,6 +469,7 @@ try {
           ? conversation
           : {
               ...conversation,
+              draft: conversation.draft === submittedDraft ? '' : conversation.draft,
               messages: [
                 ...conversation.messages,
                 {
@@ -555,6 +564,7 @@ try {
               return;
           }
 
+          // Gom các đoạn stream đến liên tiếp để React cập nhật tối đa một lần cho mỗi khung hình.
           if (renderFrame === null) {
             renderFrame = requestAnimationFrame(() => {
               renderFrame = null;
@@ -582,6 +592,7 @@ try {
       }
 
       renderAssistant(false);
+      // Nếu người dùng dừng, phần đã nhận vẫn hiển thị trong phiên. Nhánh này kết thúc trước bước lưu AI.
       if (stopped) return;
     } finally {
       streamControllerRef.current = null;
@@ -590,6 +601,7 @@ try {
 
   
     try {
+      // Frontend lưu câu trả lời, nội dung suy nghĩ và nguồn sau khi nhận xong luồng.
       const savedAssistant = await saveConversationMessage(
           savedConversationId,
         {
@@ -658,22 +670,19 @@ const chatContent =
       key={active.id ?? 'unsaved-draft'}
       conversation={active}
       knowledgeBases={bases}
+      onDraftChange={handleDraftChange}
+      onLoadOlder={(beforeId, beforePrepend) => loadConversationMessages(active.id, beforeId, beforePrepend)}
       onSend={send}
       canStop={active.id !== null && active.id === streamConversationId}
       onStop={stopGenerating}
-      showStreaming={showStreaming}
     />
   );
   return (
-    <div className="app" data-theme={theme}>
+    <div className="app">
       <a className="skip-link" href="#workspace-main">Đến nội dung</a>
       <Sidebar
         page={page}
         health={health}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        showStreaming={showStreaming}
-        onShowStreaming={setShowStreaming}
         onNavigate={destination => {
           setPage(destination);
           setSelectedBase(null);

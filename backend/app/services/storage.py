@@ -1,3 +1,5 @@
+# Lưu, tải, đổi tên và xóa file gốc trên MongoDB Atlas qua GridFS.
+
 from bson import ObjectId
 from gridfs import GridFSBucket
 from pathlib import Path
@@ -40,6 +42,7 @@ def upload_to_atlas(filename: str, content: bytes, knowledge_base_id: str) -> Do
             "status": "uploaded",
         }
 
+        # GridFS tách metadata file và dữ liệu nhị phân để lưu file gốc cho việc đọc lại.
         file_id = bucket.upload_from_stream(
             filename,
             content,
@@ -97,6 +100,7 @@ def _delete_atlas_file(file_id: str) -> DocumentDeleteResponse:
         bucket = GridFSBucket(database)
 
         document = find_file_record(database, object_id)
+        # Ẩn file khỏi truy xuất trước khi dọn vector, đoạn văn bản và file gốc.
         mark_file_deleting(database, object_id)
 
         delete_vector_chunks(file_id)

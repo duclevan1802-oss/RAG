@@ -1,3 +1,5 @@
+# Lưu bộ tài liệu và đếm số file thuộc mỗi bộ từ metadata GridFS.
+
 from app.core.config import settings
 from bson import ObjectId
 from app.db.mongodb import create_mongo_client
@@ -52,6 +54,7 @@ def list_knowledge_bases(
             return []
 
         base_ids = [base["_id"] for base in bases]
+        # Đếm file cho cả trang bộ tài liệu trong một truy vấn MongoDB.
         file_counts = database["fs.files"].aggregate([
             {"$match": {"metadata.knowledge_base_id": {"$in": base_ids}}},
             {"$group": {"_id": "$metadata.knowledge_base_id", "count": {"$sum": 1}}},
@@ -130,6 +133,7 @@ def delete_knowledge_base_by_id(knowledge_base_id: str) -> KnowledgeBaseDeleteRe
             knowledge_base_file_filter(document["_id"])
         )
 
+        # Bộ đang có file phải được dọn riêng trước khi xóa thông tin của bộ.
         if file is not None:
             raise ValueError("Bộ tài liệu đang có file, chưa thể xóa.")
 

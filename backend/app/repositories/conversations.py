@@ -1,3 +1,5 @@
+# Lưu hội thoại và tin nhắn, phân trang lịch sử và chọn ngữ cảnh gửi cho model.
+
 from datetime import datetime, timezone
 
 from app.core.config import settings
@@ -7,6 +9,7 @@ from app.schemas.conversation import (
     ConversationResponse,
     ConversationStarted,
     MessageCreate,
+    MessagePage,
     MessageResponse,
     ConversationDeleteResponse,
 )
@@ -43,6 +46,7 @@ def create_conversation(
     conversation_id = ObjectId()
     message_id = ObjectId()
 
+    # Dùng phần đầu câu hỏi làm tiêu đề nếu người dùng chưa đặt tên riêng.
     if data.title == CONVERSATION_DEFAULT_TITLE:
         title = data.content[
             :CONVERSATION_AUTO_TITLE_LENGTH
@@ -84,6 +88,7 @@ def create_conversation(
                     session=current_session,
                 )
 
+            # Ghi hội thoại và tin nhắn đầu tiên cùng lúc để tránh xuất hiện một hội thoại rỗng trong Atlas.
             session.with_transaction(
                 save_first_message,
             )
@@ -139,6 +144,7 @@ def conversation_message_filter(
         }
     }
 
+# MongoDB lưu ObjectId. API đổi ID sang chuỗi để biểu diễn trong JSON.
 def message_from_mongo(document: dict) -> MessageResponse:
     created_at = document["created_at"]
 
@@ -266,6 +272,55 @@ def list_messages(
             for document in documents
         ]
 
+# Sắp xếp theo thời điểm và ID để phân trang ổn định khi nhiều tin có cùng thời điểm lưu.
+def list_message_page(
+    conversation_id: str,
+    before_id: str | None,
+    limit: int,
+) -> MessagePage:
+    object_id = parse_conversation_id(conversation_id)
+    message_filter = conversation_message_filter(object_id)
+
+    with create_mongo_client() as client:
+        database = client[settings.mongodb_database]
+        if database["conversations"].find_one({"_id": object_id}, {"_id": 1}) is None:
+            raise LookupError("Không tìm thấy hội thoại.")
+
+        collection = database["messages"]
+        if before_id is not None:
+            anchor_ids: list[str | ObjectId] = [before_id]
+            if ObjectId.is_valid(before_id):
+                anchor_ids.append(ObjectId(before_id))
+            anchor = collection.find_one(
+                {**message_filter, "_id": {"$in": anchor_ids}},
+                {"created_at": 1},
+            )
+            if anchor is None:
+                raise LookupError("Không tìm thấy mốc tải tin nhắn trong hội thoại.")
+
+            message_filter["$or"] = [
+                {"created_at": {"$lt": anchor["created_at"]}},
+                {
+                    "created_at": anchor["created_at"],
+                    "$expr": {"$lt": ["$_id", {"$literal": anchor["_id"]}]},
+                },
+            ]
+
+        documents = list(
+            collection.find(message_filter)
+            .sort([("created_at", -1), ("_id", -1)])
+            # Đọc thêm một bản ghi để biết có còn trang cũ hơn mà không phải đếm toàn bộ lịch sử.
+            .limit(limit + 1)
+        )
+
+    # Đảo lại thứ tự của trang để giao diện đọc từ tin cũ đến mới.
+    messages = [message_from_mongo(document) for document in reversed(documents[:limit])]
+    return MessagePage(
+        messages=messages,
+        next_before_id=messages[0].id if len(documents) > limit else None,
+    )
+
+
 def list_recent_messages_for_llm(
     conversation_id: str,
     current_message_id: str,
@@ -363,6 +418,7 @@ def list_recent_messages_for_llm(
             .limit(limit)
         )
 
+    # Truy vấn lấy tin gần nhất trước. Model cần đọc phần lịch sử được chọn theo thứ tự hội thoại.
     documents.reverse()
 
     return [

@@ -1,3 +1,5 @@
+# Đọc lớp văn bản có sẵn trong từng trang PDF và đánh dấu trang có chữ.
+
 import pymupdf
 
 from app.schemas.document import DocumentPageText

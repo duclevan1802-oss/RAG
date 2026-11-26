@@ -1,3 +1,5 @@
+# Các kiểu phản hồi cho endpoint kiểm tra FastAPI và MongoDB.
+
 from pydantic import BaseModel
 
 

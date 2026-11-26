@@ -1,3 +1,5 @@
+// Xử lý ô nhập, phím gửi, kiểm tra câu hỏi và nút dừng tạo khi đang stream.
+
 import { useRef, useState } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import type { Attachment } from '../../types/chat';
@@ -9,7 +11,7 @@ interface Props {
   value: string;
   inputRef: RefObject<HTMLTextAreaElement | null>;
   onChange: (value: string) => void;
-  onSend: (content: string, attachments: Attachment[]) => boolean;
+  onSend: (content: string, attachments: Attachment[]) => void;
   canStop: boolean;
   onStop: () => void;
   sourceControl: ReactNode;
@@ -30,12 +32,17 @@ export default function ChatComposer({
       setError('Chat chưa gửi được file trực tiếp. Hãy tải file lên trong Kho tài liệu hoặc bỏ tệp đính kèm để gửi câu hỏi.');
       return;
     }
-    if (!value.trim()) return;
-
-    if (onSend(value.trim(), attachments)) {
-      onChange('');
-      setError('');
+    const question = value.trim();
+    if (!question) return;
+    // Đếm ký tự Unicode theo cùng cách với giới hạn câu hỏi của backend.
+    if (Array.from(question).length > constants.question_max_length) {
+      const limit = constants.question_max_length.toLocaleString('vi-VN');
+      setError(`Câu hỏi tối đa ${limit} ký tự.`);
+      return;
     }
+
+    setError('');
+    onSend(question, attachments);
   }
 
   function selectFiles(files: File[]) {
@@ -60,6 +67,7 @@ export default function ChatComposer({
           value={value}
           onChange={event => onChange(event.target.value)}
           onKeyDown={event => {
+            // Shift + Enter xuống dòng. Enter trong lúc bộ gõ còn ghép chữ sẽ không gửi câu hỏi.
             if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
             event.preventDefault();
             send();

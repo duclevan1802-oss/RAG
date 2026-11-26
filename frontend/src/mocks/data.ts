@@ -1,3 +1,5 @@
+// Dữ liệu mẫu có sẵn cho phần giao diện. Kho tài liệu đang sử dụng dữ liệu từ API.
+
 import type { KnowledgeBase, Document } from '../types/document';
 export const knowledgeBases: KnowledgeBase[] = [
   { id: 'personal', name: 'Tài liệu cá nhân', description: 'Ý tưởng, ghi chú và kiến thức mỗi ngày.' },

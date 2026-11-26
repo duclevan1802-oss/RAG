@@ -1,3 +1,5 @@
+# Định nghĩa dữ liệu bộ tài liệu khi tạo mới và khi trả về giao diện.
+
 from collections.abc import Mapping
 from typing import Any, Self
 

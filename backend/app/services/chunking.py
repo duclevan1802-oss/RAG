@@ -1,3 +1,5 @@
+# Chia văn bản thành đoạn chồng lấn và giữ vị trí để trích dẫn tài liệu gốc.
+
 from app.core.constants import CHUNK_OVERLAP, CHUNK_SIZE
 from app.schemas.document import (
     DOCXTextResponse,
@@ -31,6 +33,7 @@ def split_text(
         if end == len(text):
             break
 
+        # Giữ phần đuôi của đoạn trước ở đầu đoạn kế tiếp để câu hoặc ý gần ranh giới còn ngữ cảnh.
         start = end - overlap
 
     return chunks
@@ -43,6 +46,7 @@ def create_document_chunks(
     if chunk_size <= 0 or not 0 <= overlap < chunk_size:
         raise ValueError("Thông số chia đoạn không hợp lệ.")
 
+    # PDF trích dẫn theo số trang. DOCX trích dẫn theo thứ tự khối văn bản hoặc bảng.
     if isinstance(document, DocumentTextResponse):
         sources = [
             (page.text, page.page_number, None)

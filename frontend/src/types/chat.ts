@@ -1,3 +1,5 @@
+// Các kiểu TypeScript cho tin nhắn, nguồn RAG, hội thoại và dữ liệu API chat.
+
 export interface Attachment { id: string; filename: string }
 export interface Source { id: string; filename: string; page?: number; excerpt: string; number?: number }
 export interface Message {
@@ -15,8 +17,11 @@ export interface Message {
 export interface Conversation {
   id: string | null;
   title: string;
+  // Nội dung đang gõ chỉ nằm trong trạng thái giao diện của hội thoại này.
+  draft?: string;
   messages: Message[];
   messagesState?: 'unloaded' | 'loading' | 'loaded' | 'error';
+  olderMessagesCursor?: string | null;
 }
 export interface RagSourceFromApi {
   chunk_id: string;
@@ -48,6 +53,7 @@ export interface ConversationFromApi {
   updated_at: string;
 }
 
+// ID trong JSON là chuỗi. Repository backend đổi sang hoặc đọc từ BSON ObjectId khi làm việc với MongoDB.
 export interface MessageFromApi {
   id: string;
   conversation_id: string;
@@ -57,6 +63,11 @@ export interface MessageFromApi {
   sources: RagSourceFromApi[];
   status: 'completed' | 'failed';
   created_at: string;
+}
+
+export interface MessagePageFromApi {
+  messages: MessageFromApi[];
+  next_before_id: string | null;
 }
 
 export interface MessageCreateRequest {

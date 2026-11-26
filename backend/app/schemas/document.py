@@ -1,3 +1,5 @@
+# Định nghĩa metadata file, văn bản đã trích xuất và các đoạn lưu để tra cứu.
+
 from collections.abc import Mapping
 from typing import Any, Self
 from datetime import datetime
@@ -26,6 +28,8 @@ class DocumentResponse(BaseModel):
     status: str
     chunk_count: int = 0
     error: str | None = None
+    # Thông tin nội bộ phục vụ truy xuất. API chỉ trả trạng thái và dữ liệu cần cho giao diện.
+    active_index_version: str | None = Field(default=None, exclude=True)
 
     @classmethod
     def from_gridfs(
@@ -44,6 +48,7 @@ class DocumentResponse(BaseModel):
             status=metadata.get("status", "uploaded"),
             chunk_count=metadata.get("chunk_count", 0),
             error=metadata.get("error"),
+            active_index_version=metadata.get("active_index_version"),
         )
 
 
@@ -90,6 +95,7 @@ class DocumentChunksResponse(BaseModel):
     total_chunks: int
     chunks: list[DocumentChunk]
 
+# Dữ liệu đoạn đọc lại từ MongoDB, có thêm ID bản ghi và thời điểm tạo.
 class StoredDocumentChunk(BaseModel):
     id: str
     document_id: str

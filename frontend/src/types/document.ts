@@ -1,3 +1,5 @@
+// Các kiểu TypeScript cho bộ tài liệu, file và trạng thái tải danh sách.
+
 export type DocumentStatus =
   | 'uploaded'
   | 'queued'

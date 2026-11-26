@@ -1,3 +1,5 @@
+// Nhận file từ hộp chọn hoặc thao tác kéo thả trong kho tài liệu.
+
 import { useRef, useState } from 'react';
 import Icon from '../Icon';
 import constants from '../../../../shared/constants.json';

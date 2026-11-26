@@ -1,5 +1,7 @@
+# Khởi động frontend, backend và theo dõi nhật ký của hai tiến trình.
 
 $ErrorActionPreference = 'Stop'
+# Dựng đường dẫn từ thư mục script để có thể chạy lệnh từ terminal khác thư mục.
 $root = $PSScriptRoot
 $python = Join-Path $root 'backend\.venv\Scripts\python.exe'
 $vite = Join-Path $root 'frontend\node_modules\vite\bin\vite.js'
@@ -24,6 +26,7 @@ function Test-JsonEndpoint([string]$Url) {
     catch { return $null }
 }
 
+# Gom stdout và stderr vào một thư mục riêng cho mỗi lần khởi động.
 $logDir = Join-Path $root ('storage\logs\run-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + $PID)
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 $started = [System.Collections.Generic.List[object]]::new()
@@ -51,6 +54,7 @@ function Show-NewLogLines($Log) {
         try {
             if ($file.Length -lt $Log.Offset) { $Log.Offset = 0L }
             if ($file.Length -eq $Log.Offset) { return }
+            # Dùng vị trí đọc lần trước để chỉ in phần log mới.
             $null = $file.Seek($Log.Offset, [System.IO.SeekOrigin]::Begin)
             $reader = [System.IO.StreamReader]::new($file, [System.Text.Encoding]::UTF8)
             $content = $reader.ReadToEnd()
@@ -63,6 +67,7 @@ function Show-NewLogLines($Log) {
 }
 
 try {
+    # Chỉ dùng lại tiến trình chiếm cổng backend sau khi endpoint kiểm tra phản hồi đúng.
     if (Test-LocalPort 8000) {
         $health = Test-JsonEndpoint 'http://127.0.0.1:8000/health'
         if ($null -eq $health -or $health.status -ne 'ok') { throw 'Port 8000 is occupied, but the backend health check failed.' }
@@ -96,6 +101,7 @@ try {
     }
 }
 finally {
+    # Danh sách này chỉ chứa tiến trình do script hiện tại khởi động.
     foreach ($entry in $started) {
         $entry.Process.Refresh()
         if (-not $entry.Process.HasExited) {

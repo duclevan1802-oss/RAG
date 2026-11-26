@@ -1,3 +1,5 @@
+# Đầu vào HTTP để tạo, liệt kê, đổi thông tin và xóa bộ tài liệu.
+
 from fastapi import APIRouter, HTTPException, Query
 from bson import ObjectId
 from pymongo.errors import DuplicateKeyError, PyMongoError

@@ -1,3 +1,5 @@
+# Tạo MongoClient cho repository và cung cấp thao tác ping để kiểm tra kết nối.
+
 from pymongo import MongoClient
 from app.core.config import settings
 

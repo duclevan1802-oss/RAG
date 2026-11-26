@@ -1,3 +1,5 @@
+// Hiển thị trạng thái tải, danh sách file và vùng tải file của bộ tài liệu đang mở.
+
 import type { KnowledgeBase, DocumentListState } from '../types/document';
 import UploadZone from '../components/documents/UploadZone';
 import DocumentList from '../components/documents/DocumentList';

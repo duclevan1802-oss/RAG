@@ -1,3 +1,5 @@
+// Hiển thị, lọc theo tên và mở hộp thoại tạo bộ tài liệu.
+
 import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { KnowledgeBase } from '../types/document';

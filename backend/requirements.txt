@@ -1,11 +1,16 @@
+# Các thư viện cần cài cho API, cơ sở dữ liệu, đọc tài liệu và tạo embedding.
+
 fastapi
 uvicorn 
 pymongo
 pydantic-settings
 httpx
 langchain-groq
+# Đọc dữ liệu multipart khi tải tệp lên FastAPI.
 python-multipart
+# Trích xuất nội dung từ PDF và DOCX.
 PyMuPDF
 python-docx>=1.1.2,<2
+# Tạo embedding bằng model tiếng Việt và lưu vector trong Chroma.
 sentence-transformers
 chromadb

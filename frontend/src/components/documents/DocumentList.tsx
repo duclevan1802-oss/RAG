@@ -1,3 +1,5 @@
+// Hiển thị bảng file trong một bộ, dung lượng, trạng thái và thao tác xóa.
+
 import type { Document } from '../../types/document';
 import DocumentStatus from './DocumentStatus';
 import Icon from '../Icon';

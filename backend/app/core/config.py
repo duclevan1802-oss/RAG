@@ -1,8 +1,11 @@
+# Đọc cấu hình triển khai như URI MongoDB, model Groq và thư mục Chroma.
+
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import SecretStr
 
 
+# Tìm .env theo vị trí gói backend để lệnh chạy từ thư mục khác vẫn lấy đúng cấu hình.
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 

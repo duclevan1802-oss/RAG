@@ -1,3 +1,5 @@
+// Bố trí màn hình chat, chọn nguồn tài liệu và quản lý vị trí cuộn của hội thoại.
+
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { Conversation, Attachment } from '../types/chat';
 import type { KnowledgeBase } from '../types/document';
@@ -8,10 +10,11 @@ import Icon from '../components/Icon';
 interface Props {
   conversation: Conversation;
   knowledgeBases: KnowledgeBase[];
+  onDraftChange: (draft: string) => void;
+  onLoadOlder: (beforeId: string, beforePrepend: () => void) => Promise<void>;
   onSend: (content: string, attachments: Attachment[], knowledgeBaseId: string) => void;
   canStop: boolean;
   onStop: () => void;
-  showStreaming: boolean;
 }
 
 const suggestions = [
@@ -25,15 +28,21 @@ function isAtChatEnd(viewport: HTMLDivElement) {
   return viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= 4;
 }
 
-export default function ChatPage({ conversation, knowledgeBases, onSend, canStop, onStop, showStreaming }: Props) {
-  const [draft, setDraft] = useState('');
+export default function ChatPage({
+  conversation, knowledgeBases, onDraftChange, onLoadOlder, onSend, canStop, onStop,
+}: Props) {
+  const draft = conversation.draft ?? '';
   const [selectedBaseId, setSelectedBaseId] = useState('');
   const [sourceError, setSourceError] = useState('');
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // Tự cuộn theo câu trả lời khi người dùng ở cuối. Đọc tin cũ sẽ giữ vị trí đang xem.
   const followLatest = useRef(true);
+  const olderAnchor = useRef<{ element: Element; top: number } | null>(null);
+  const olderCursor = conversation.olderMessagesCursor;
   const hasMessages = conversation.messages.length > 0;
 
   useLayoutEffect(() => {
@@ -57,6 +66,31 @@ export default function ChatPage({ conversation, knowledgeBases, onSend, canStop
     return () => observer.disconnect();
   }, [hasMessages]);
 
+  useLayoutEffect(() => {
+    const viewport = scrollRef.current;
+    const anchor = olderAnchor.current;
+    olderAnchor.current = null;
+    if (viewport && anchor && viewport.contains(anchor.element)) {
+      viewport.scrollTop += anchor.element.getBoundingClientRect().top - anchor.top;
+    }
+  }, [olderCursor]);
+
+  async function loadOlder() {
+    if (!olderCursor || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      await onLoadOlder(olderCursor, () => {
+        const element = listRef.current?.firstElementChild;
+        if (!element) return;
+        followLatest.current = false;
+        // Nhớ vị trí của tin đầu đang hiển thị để khôi phục sau khi chèn một trang tin cũ.
+        olderAnchor.current = { element, top: element.getBoundingClientRect().top };
+      });
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
+
   function jumpToLatest() {
     const viewport = scrollRef.current;
     if (!viewport) return;
@@ -70,16 +104,15 @@ export default function ChatPage({ conversation, knowledgeBases, onSend, canStop
     const selectedBase = knowledgeBases.find(base => base.id === selectedBaseId);
     if (selectedBaseId && !selectedBase) {
       setSourceError('Bộ tài liệu này không còn trong danh sách. Hãy chọn bộ khác.');
-      return false;
+      return;
     }
     setSourceError('');
     jumpToLatest();
     onSend(content, attachments, selectedBase?.id ?? '');
-    return true;
   }
 
   function fillSuggestion(prompt: string) {
-    setDraft(prompt);
+    onDraftChange(prompt);
     inputRef.current?.focus();
   }
 
@@ -108,11 +141,26 @@ export default function ChatPage({ conversation, knowledgeBases, onSend, canStop
           setShowJumpToLatest(!atEnd);
         } : undefined}
       >
-        {hasMessages ? <MessageList ref={listRef} messages={conversation.messages} showStreaming={showStreaming} /> : (
+        {olderCursor && (
+          <div className="older-messages">
+            <button className="secondary" type="button" onClick={loadOlder} disabled={loadingOlder}>
+              {loadingOlder ? 'Đang tải tin nhắn…' : 'Tải tin nhắn cũ hơn'}
+            </button>
+          </div>
+        )}
+        {hasMessages ? <MessageList ref={listRef} messages={conversation.messages} /> : (
           <div className="welcome">
-            <span className="welcome-mark"><Icon name="spark" size={33} /></span>
-            <h2>Xin chào, tôi là <span>VIT AI</span></h2>
-            <p>Hỏi về tài liệu của bạn hoặc bắt đầu với một câu hỏi mới.</p>
+            <div className="welcome-lead">
+              <div className="welcome-copy">
+                <h2>Hỏi từ <span>tài liệu</span> của bạn</h2>
+                <p>Tóm tắt nội dung, giải thích khái niệm hoặc tìm câu trả lời kèm nguồn.</p>
+              </div>
+              <div className="welcome-visual" aria-hidden="true">
+                <span className="welcome-node welcome-node-file"><Icon name="file" size={25} /></span>
+                <span className="welcome-mark"><Icon name="spark" size={33} /></span>
+                <span className="welcome-node welcome-node-chat"><Icon name="chat" size={22} /></span>
+              </div>
+            </div>
             <div className="suggestions" role="group" aria-label="Gợi ý câu hỏi">
               {suggestions.map(suggestion => (
                 <button key={suggestion.title} type="button" onClick={() => fillSuggestion(suggestion.prompt)}>
@@ -121,6 +169,7 @@ export default function ChatPage({ conversation, knowledgeBases, onSend, canStop
                     <strong>{suggestion.title}</strong>
                     <small>{suggestion.detail}</small>
                   </span>
+                  <span className="suggestion-arrow"><Icon name="chevron" size={16} /></span>
                 </button>
               ))}
             </div>
@@ -146,7 +195,7 @@ export default function ChatPage({ conversation, knowledgeBases, onSend, canStop
         <ChatComposer
           value={draft}
           inputRef={inputRef}
-          onChange={setDraft}
+          onChange={onDraftChange}
           onSend={send}
           canStop={canStop}
           onStop={onStop}

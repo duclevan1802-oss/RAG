@@ -1,3 +1,4 @@
+# Các endpoint hỏi Groq trực tiếp, tra cứu RAG và trả lời RAG theo từng sự kiện.
 import logging
 from bson import ObjectId
 from fastapi import APIRouter, HTTPException
@@ -47,6 +48,7 @@ async def chat(body: ChatRequest):
         raise HTTPException(502, "Không lấy được câu trả lời từ Groq.") from error
 
 
+# Đây là endpoint giao diện sử dụng để nhận nguồn, phần suy nghĩ và câu trả lời theo từng phần.
 @router.post("/chat/rag/stream")
 async def chat_with_documents_stream(body: RagChatRequest):
     try:
@@ -75,6 +77,7 @@ async def chat_with_documents_stream(body: RagChatRequest):
                 knowledge_base_id,
             )
 
+        # Câu hỏi vừa lưu có ID riêng. Repository dùng ID đó để bỏ câu hiện tại khỏi lịch sử gửi kèm.
         history = await run_in_threadpool(
             list_recent_messages_for_llm,
             body.conversation_id,
@@ -82,6 +85,7 @@ async def chat_with_documents_stream(body: RagChatRequest):
             10,
         )
 
+        # Câu chào và lời cảm ơn đơn giản dùng nhánh trả lời chung để tránh tra cứu nguồn không liên quan.
         if is_casual_message(body.question):
             chunks = []
         else:
@@ -103,6 +107,7 @@ async def chat_with_documents_stream(body: RagChatRequest):
     except PyMongoError as error:
         raise HTTPException(503, "Không kết nối được MongoDB.") from error
 
+    # Mỗi dòng NDJSON là một sự kiện để trình duyệt đọc dần từ cùng một phản hồi HTTP.
     async def generate():
         yield RagStreamEvent(type="sources", sources=chunks).model_dump_json(exclude_none=True) + "\n"
         if chunks:
@@ -135,6 +140,7 @@ async def chat_with_documents_stream(body: RagChatRequest):
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
+# Biến thể trả một JSON hoàn chỉnh, có cả câu trả lời và danh sách đoạn tìm được.
 @router.post("/chat/rag", response_model=RagChatResponse)
 async def chat_with_documents(body: RagChatRequest):
     try:

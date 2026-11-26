@@ -1,3 +1,5 @@
+# Tạo ứng dụng FastAPI, thiết lập CORS và đăng ký các nhóm endpoint.
+
 from fastapi import FastAPI, HTTPException
 from pymongo.errors import PyMongoError
 from app.db.mongodb import ping_mongodb
@@ -15,6 +17,7 @@ app = FastAPI(
     version= "1.0.0" 
 )
 
+# Cho phép trình duyệt gọi API từ các địa chỉ giao diện khai báo trong CORS_ORIGINS.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -35,6 +38,7 @@ app.include_router(knowledge_bases_router)
 app.include_router(documents_router)
 app.include_router(conversations_router)
 
+# Endpoint nhẹ để xác nhận FastAPI phản hồi. Kết nối Atlas được kiểm tra ở /health/mongodb.
 @app.get("/health", response_model=HealthResponse)
 def health():
     return HealthResponse()

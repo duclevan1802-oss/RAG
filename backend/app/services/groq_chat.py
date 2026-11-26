@@ -1,3 +1,5 @@
+# Chuẩn bị tin nhắn cho ChatGroq và chuyển phản hồi model thành dữ liệu cho API chat.
+
 from collections.abc import AsyncIterator
 from functools import lru_cache
 
@@ -31,7 +33,19 @@ def build_messages(
     prompt: str,
     history: list[dict[str, str]] | None = None,
 ) -> list[tuple[str, str]]:
-    messages = [("system", "Bạn là VIT AI. Trả lời rõ ràng bằng tiếng Việt.")]
+    system_prompt = """
+    Bạn là VIT AI, trợ lý trả lời bằng tiếng Việt tự nhiên và rõ ràng.
+
+    Trả lời trực tiếp vào câu hỏi. Điều chỉnh độ dài theo điều người dùng cần.
+    Với lời chào hoặc câu hỏi đơn giản, trả lời ngắn gọn như đang trò chuyện.
+    Khi giải thích một khái niệm, ưu tiên đoạn văn ngắn và thêm ví dụ nếu
+    ví dụ đó giúp người dùng hiểu nhanh hơn.
+    Khi hướng dẫn một thao tác, trình bày theo các bước có thể làm theo.
+    Chỉ dùng tiêu đề, danh sách hoặc khối mã khi chúng giúp câu trả lời dễ đọc.
+    """.strip()
+
+    # Đặt hướng dẫn chung trước lịch sử, rồi thêm câu hỏi hiện tại dưới vai trò người dùng.
+    messages = [("system", system_prompt)]
     messages.extend(
         (item["role"], item["content"]) for item in (history or [])
     )
@@ -60,13 +74,13 @@ async def stream_groq(
     reported_progress = False
 
     async for chunk in get_groq_model().astream(build_messages(prompt, history)):
-        if (
-            not reported_progress
-            and not has_content
-            and chunk.additional_kwargs.get("reasoning_content")
-        ):
-            reported_progress = True
-            yield RagStreamEvent(type="progress", content="Đang suy nghĩ…")
+        # Groq gửi dữ liệu suy nghĩ tách khỏi nội dung câu trả lời để UI hiển thị hai phần riêng.
+        thinking = chunk.additional_kwargs.get("reasoning_content")
+        if not has_content and isinstance(thinking, str) and thinking:
+            if not reported_progress:
+                reported_progress = True
+                yield RagStreamEvent(type="progress", content="Đang suy nghĩ…")
+            yield RagStreamEvent(type="thinking", content=thinking)
 
         content = chunk.content
         if isinstance(content, str) and content:
